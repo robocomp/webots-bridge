@@ -1,0 +1,11 @@
+import "Laser.idsl";
+
+Component Webots2Robocomp
+{
+    Communications
+    {
+        implements Laser;
+    };
+    language Cpp11;
+};
+
