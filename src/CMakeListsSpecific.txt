@@ -10,7 +10,8 @@ SET ( HEADERS
   specificmonitor.h
 )
 
-
-SET (LIBS ${LIBS}  )
-
+set(WEBOTS_HOME "/usr/local/webots")
+link_directories(${WEBOTS_HOME}/lib/controller)
+SET (LIBS -L/usr/local/webots/lib/controller Controller CppController)
+include_directories(${WEBOTS_HOME}/include/controller/c ${WEBOTS_HOME}/include/controller/cpp)
 

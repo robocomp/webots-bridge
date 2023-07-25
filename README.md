@@ -27,3 +27,8 @@ After editing the new config file we can run the component:
 ```
 bin/Webots2Robocomp config
 ```
+
+# APUNTES PARA DESPUES 
+
+El roboto tiene que tener el controller <extern> asignado para poder utilizar el puente.
+
