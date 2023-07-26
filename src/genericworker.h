@@ -26,6 +26,7 @@
 
 #include <GenericBase.h>
 #include <Laser.h>
+#include <Lidar3D.h>
 
 
 #define CHECK_PERIOD 5000
@@ -52,6 +53,7 @@ public:
 	virtual RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState) = 0;
 	virtual RoboCompLaser::LaserConfData Laser_getLaserConfData() = 0;
 	virtual RoboCompLaser::TLaserData Laser_getLaserData() = 0;
+	virtual RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor) = 0;
 
 protected:
 

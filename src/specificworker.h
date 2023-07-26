@@ -28,6 +28,8 @@
 #define SPECIFICWORKER_H
 
 #include <genericworker.h>
+#include <webots/Robot.hpp>
+#include <webots/Lidar.hpp>
 
 class SpecificWorker : public GenericWorker
 {
@@ -40,6 +42,8 @@ public:
 	RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState);
 	RoboCompLaser::LaserConfData Laser_getLaserConfData();
 	RoboCompLaser::TLaserData Laser_getLaserData();
+	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor);
+
 
 public slots:
 	void compute();
@@ -48,6 +52,14 @@ public slots:
 private:
 	bool startup_check_flag;
 
+    webots::Robot* robot;
+    webots::Lidar* lidar;
+
+    void receiving_lidarData(webots::Lidar* _lidar);
+
+    RoboCompLaser::TLaserData laserData;
+    RoboCompLaser::LaserConfData laserDataConf;
+    RoboCompLidar3D::TData lidar3dData;
 };
 
 #endif
