@@ -169,20 +169,32 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, in
 
     double startRadians = start * M_PI / 180.0; // Convert to radians
     double lenRadians = len * M_PI / 180.0; // Convert to radians
-    int counter = 0;
+    double endRadians = startRadians + lenRadians; // Precompute end angle
 
-    //std::cout << "size: " << lidar3dData.points.size() << std::endl;
+    int counter = 0;
+    int decimationCounter = 0; // Use a separate counter for decimation
+
+    // Reserve space for points. If decimation is 1, at max we could have same number of points
+    if (decimationfactor == 1)
+    {
+        filteredData.points.reserve(lidar3dData.points.size());
+    }
 
     for (int i = 0; i < lidar3dData.points.size(); i++)
     {
         double angle = atan2(lidar3dData.points[i].y, lidar3dData.points[i].x) + M_PI; // Calculate angle in radians
-        if (angle >= startRadians && angle <= (startRadians + lenRadians))
+        if (angle >= startRadians && angle <= endRadians)
         {
-            if (counter % decimationfactor == 0) // Add decimation factor
+            if (decimationCounter == 0) // Add decimation factor
             {
                 filteredData.points.push_back(lidar3dData.points[i]);
             }
             counter++;
+            decimationCounter++;
+            if (decimationCounter == decimationfactor)
+            {
+                decimationCounter = 0; // Reset decimation counter
+            }
         }
     }
 
