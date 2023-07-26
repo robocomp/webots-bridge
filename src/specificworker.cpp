@@ -111,6 +111,8 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
     newLaserConfData.minRange = minRange;
     newLaserConfData.angleRes = fov / horizontalResolution;
 
+    //std::cout << "horizontal resolution: " << horizontalResolution << " vertical resolution: " << verticalResolution << " fov: " << fov << " vertical fov: " << verticalFov << std::endl;
+
     if(!rangeImage) { std::cout << "Lidar data empty." << std::endl; return; }
 
 
@@ -131,6 +133,9 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
             point.x = distance * cos(horizontalAngle) * cos(verticalAngle);
             point.y = distance * sin(horizontalAngle) * cos(verticalAngle);
             point.z = distance * sin(verticalAngle);
+
+
+            //std::cout << "X: " << point.x << " Y: " << point.y << " Z: " << point.z << std::endl;
 
             newLidar3dData.points.push_back(point);
             newLaserData.push_back(data);
@@ -164,13 +169,20 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, in
 
     double startRadians = start * M_PI / 180.0; // Convert to radians
     double lenRadians = len * M_PI / 180.0; // Convert to radians
+    int counter = 0;
+
+    //std::cout << "size: " << lidar3dData.points.size() << std::endl;
 
     for (int i = 0; i < lidar3dData.points.size(); i++)
     {
         double angle = atan2(lidar3dData.points[i].y, lidar3dData.points[i].x) + M_PI; // Calculate angle in radians
         if (angle >= startRadians && angle <= (startRadians + lenRadians))
         {
-            filteredData.points.push_back(lidar3dData.points[i]);
+            if (counter % decimationfactor == 0) // Add decimation factor
+            {
+                filteredData.points.push_back(lidar3dData.points[i]);
+            }
+            counter++;
         }
     }
 
