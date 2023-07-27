@@ -1,11 +1,12 @@
 import "Laser.idsl";
 import "Lidar3D.idsl";
+import "CameraRGBDSimple.idsl";
 
 Component Webots2Robocomp
 {
     Communications
     {
-        implements Laser, Lidar3D;
+        implements Laser, Lidar3D, CameraRGBDSimple;
     };
     language Cpp11;
 };

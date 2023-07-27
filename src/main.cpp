@@ -81,6 +81,7 @@
 #include "specificmonitor.h"
 #include "commonbehaviorI.h"
 
+#include <camerargbdsimpleI.h>
 #include <laserI.h>
 #include <lidar3dI.h>
 
@@ -173,6 +174,24 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 
 		}
 
+
+
+		try
+		{
+			// Server adapter creation and publication
+			if (not GenericMonitor::configGetString(communicator(), prefix, "CameraRGBDSimple.Endpoints", tmp, ""))
+			{
+				cout << "[" << PROGRAM_NAME << "]: Can't read configuration for proxy CameraRGBDSimple";
+			}
+			Ice::ObjectAdapterPtr adapterCameraRGBDSimple = communicator()->createObjectAdapterWithEndpoints("CameraRGBDSimple", tmp);
+			auto camerargbdsimple = std::make_shared<CameraRGBDSimpleI>(worker);
+			adapterCameraRGBDSimple->add(camerargbdsimple, Ice::stringToIdentity("camerargbdsimple"));
+			adapterCameraRGBDSimple->activate();
+			cout << "[" << PROGRAM_NAME << "]: CameraRGBDSimple adapter created in port " << tmp << endl;
+		}
+		catch (const IceStorm::TopicExists&){
+			cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for CameraRGBDSimple\n";
+		}
 
 
 		try

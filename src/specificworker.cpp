@@ -147,6 +147,30 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
     lidar3dData = newLidar3dData;
 }
 
+RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::string camera)
+{
+//implementCODE
+
+}
+
+RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::string camera)
+{
+//implementCODE
+
+}
+
+RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::string camera)
+{
+//implementCODE
+
+}
+
+RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std::string camera)
+{
+//implementCODE
+
+}
+
 
 RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState)
 {

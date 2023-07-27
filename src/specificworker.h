@@ -39,9 +39,15 @@ public:
 	~SpecificWorker();
 	bool setParams(RoboCompCommonBehavior::ParameterList params);
 
+	RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimple_getAll(std::string camera);
+	RoboCompCameraRGBDSimple::TDepth CameraRGBDSimple_getDepth(std::string camera);
+	RoboCompCameraRGBDSimple::TImage CameraRGBDSimple_getImage(std::string camera);
+	RoboCompCameraRGBDSimple::TPoints CameraRGBDSimple_getPoints(std::string camera);
+
 	RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState);
 	RoboCompLaser::LaserConfData Laser_getLaserConfData();
 	RoboCompLaser::TLaserData Laser_getLaserData();
+
 	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor);
 
 
