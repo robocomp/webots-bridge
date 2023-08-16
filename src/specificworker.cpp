@@ -18,6 +18,8 @@
  */
 #include "specificworker.h"
 
+#pragma region Robocomp Methods
+
 /**
 * \brief Default constructor
 */
@@ -72,14 +74,21 @@ void SpecificWorker::initialize(int period)
 	robot = new webots::Robot();
 
     lidar = robot->getLidar("lidar");
-    lidar->enable(64);
+    camera = robot->getCamera("camera");
+
+    if(lidar) lidar->enable(64);
+    if(camera) camera->enable(64);
 
     robot->step(100);
 }
 
 void SpecificWorker::compute()
 {
-    receiving_lidarData(lidar);
+    if(lidar)
+        receiving_lidarData(lidar);
+
+    if(camera)
+        receiving_cameraRGBDData(camera);
 
     robot->step(100);
 }
@@ -90,6 +99,10 @@ int SpecificWorker::startup_check()
 	QTimer::singleShot(200, qApp, SLOT(quit()));
 	return 0;
 }
+
+#pragma endregion Robocomp Methods
+
+#pragma region Data-Catching Methods
 
 void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
@@ -147,30 +160,79 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
     lidar3dData = newLidar3dData;
 }
 
+void SpecificWorker::receiving_cameraRGBDData(webots::Camera* _camera){
+    RoboCompCameraRGBDSimple::TImage newImage;
+
+    // Se establece el periodo de refresco de la imagen en milisegundos.
+    newImage.period = 100;
+
+    // Obtener la resolución de la imagen.
+    newImage.width = _camera->getWidth();
+    newImage.height = _camera->getHeight();
+
+    const unsigned char* webotsImageData = _camera->getImage();
+
+    // Crear un vector para la nueva imagen RGB.
+    std::vector<unsigned char> rgbImage;
+    rgbImage.reserve(3 * newImage.width * newImage.height);  // Reservar espacio para RGB
+
+    for (int y = 0; y < newImage.height; y++)
+    {
+        for (int x = 0; x < newImage.width; x++)
+        {
+            // Extraer cada canal por separado
+            unsigned char r = _camera->imageGetRed(webotsImageData, newImage.width, x, y);
+            unsigned char g = _camera->imageGetGreen(webotsImageData, newImage.width, x, y);
+            unsigned char b = _camera->imageGetBlue(webotsImageData, newImage.width, x, y);
+
+            // Añadir los canales al vector BGR final.
+            rgbImage.push_back(b);
+            rgbImage.push_back(g);
+            rgbImage.push_back(r);
+        }
+    }
+
+    // Asignar la imagen RGB al tipo TImage de Robocomp
+    newImage.image = rgbImage;
+    newImage.compressed = false;
+
+    // Asignamos el resultado final al atributo de clase
+    this->cameraImage = newImage;
+}
+
+#pragma endregion Data-Catching Methods
+
+#pragma region CameraRGBDSimple
+
 RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::string camera)
 {
-//implementCODE
+    RoboCompCameraRGBDSimple::TRGBD newRGBD;
 
+    newRGBD.image = this->cameraImage;
+    newRGBD.depth = this->depthImage;
+    // TODO: Que devuelva tambien la nube de puntos.
+
+    return newRGBD;
 }
 
 RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::string camera)
 {
-//implementCODE
-
+    return this->depthImage;
 }
 
 RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::string camera)
 {
-//implementCODE
-
+    return this->cameraImage;
 }
 
 RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std::string camera)
 {
-//implementCODE
-
+    printNotImplementedWarningMessage("CameraRGBDSimple_getPoints");
 }
 
+#pragma endregion CamerRGBDSimple
+
+#pragma region Lidar
 
 RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState)
 {
@@ -225,7 +287,13 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, in
     return filteredData;
 }
 
+#pragma endregion Lidar
 
+
+void SpecificWorker::printNotImplementedWarningMessage(string functionName)
+{
+    cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
+}
 
 /**************************************/
 // From the RoboCompLaser you can use this types:

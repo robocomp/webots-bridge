@@ -30,6 +30,8 @@
 #include <genericworker.h>
 #include <webots/Robot.hpp>
 #include <webots/Lidar.hpp>
+#include <webots/Camera.hpp>
+
 
 class SpecificWorker : public GenericWorker
 {
@@ -54,18 +56,33 @@ public:
 public slots:
 	void compute();
 	int startup_check();
+
 	void initialize(int period);
 private:
 	bool startup_check_flag;
 
     webots::Robot* robot;
     webots::Lidar* lidar;
+    webots::Camera* camera;
+
+
 
     void receiving_lidarData(webots::Lidar* _lidar);
+    void receiving_cameraRGBDData(webots::Camera* _lidar);
 
+    // Laser
     RoboCompLaser::TLaserData laserData;
     RoboCompLaser::LaserConfData laserDataConf;
+
+    // Lidar3d
     RoboCompLidar3D::TData lidar3dData;
+
+    // Camera RGBD simple
+    RoboCompCameraRGBDSimple::TDepth depthImage;
+    RoboCompCameraRGBDSimple::TImage cameraImage;
+
+    // Auxiliar functions
+    void printNotImplementedWarningMessage(string functionName);
 };
 
 #endif
