@@ -75,20 +75,21 @@ void SpecificWorker::initialize(int period)
 
     lidar = robot->getLidar("lidar");
     camera = robot->getCamera("camera");
+    range_finder = robot->getRangeFinder("range-finder");
 
     if(lidar) lidar->enable(64);
     if(camera) camera->enable(64);
+    if(range_finder) range_finder->enable(64);
 
     robot->step(100);
 }
 
 void SpecificWorker::compute()
 {
-    if(lidar)
-        receiving_lidarData(lidar);
-
-    if(camera)
-        receiving_cameraRGBDData(camera);
+    // Getting the data from simulation.
+    if(lidar) receiving_lidarData(lidar);
+    if(camera) receiving_cameraRGBData(camera);
+    if(range_finder) receiving_depthImageData(range_finder);
 
     robot->step(100);
 }
@@ -160,7 +161,7 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
     lidar3dData = newLidar3dData;
 }
 
-void SpecificWorker::receiving_cameraRGBDData(webots::Camera* _camera){
+void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
     RoboCompCameraRGBDSimple::TImage newImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
@@ -198,6 +199,42 @@ void SpecificWorker::receiving_cameraRGBDData(webots::Camera* _camera){
 
     // Asignamos el resultado final al atributo de clase
     this->cameraImage = newImage;
+}
+
+void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder){
+    RoboCompCameraRGBDSimple::TDepth newDepthImage;
+
+    // Se establece el periodo de refresco de la imagen en milisegundos.
+    newDepthImage.period = 100;
+
+    // Obtener la resolución de la imagen de profundidad.
+    newDepthImage.width = _rangeFinder->getWidth();
+    newDepthImage.height = _rangeFinder->getHeight();
+    newDepthImage.depthFactor = _rangeFinder->getMaxRange();
+    newDepthImage.compressed = false;
+
+    // Obtener la imagen de profundidad
+    const float* webotsDepthData = _rangeFinder->getRangeImage();
+
+    // Accedemos a cada depth value y le aplicamos un factor de escala.
+    const int imageElementCount = newDepthImage.width * newDepthImage.height;
+
+    for(int i= 0 ; i<imageElementCount; i++){
+
+        // Este es el factor de escala a aplicar.
+        float scaledValue = webotsDepthData[i] * 10;
+
+        // Convertimos de float a array de bytes.
+        unsigned char singleElement[sizeof(float)];
+        memcpy(singleElement, &scaledValue, sizeof(float));
+
+        for(int j=0; j<sizeof(float); j++){
+            newDepthImage.depth.emplace_back(singleElement[j]);
+        }
+    }
+
+    // Asignamos el resultado final al atributo de clase
+    this->depthImage = newDepthImage;
 }
 
 #pragma endregion Data-Catching Methods

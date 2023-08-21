@@ -31,6 +31,7 @@
 #include <webots/Robot.hpp>
 #include <webots/Lidar.hpp>
 #include <webots/Camera.hpp>
+#include <webots/RangeFinder.hpp>
 
 
 class SpecificWorker : public GenericWorker
@@ -64,11 +65,13 @@ private:
     webots::Robot* robot;
     webots::Lidar* lidar;
     webots::Camera* camera;
+    webots::RangeFinder* range_finder;
 
 
 
     void receiving_lidarData(webots::Lidar* _lidar);
-    void receiving_cameraRGBDData(webots::Camera* _lidar);
+    void receiving_cameraRGBData(webots::Camera* _camera);
+    void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
 
     // Laser
     RoboCompLaser::TLaserData laserData;
