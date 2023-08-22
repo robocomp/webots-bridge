@@ -24,6 +24,7 @@
 #include <qlog/qlog.h>
 #include <CommonBehavior.h>
 
+#include <CameraRGBDSimple.h>
 #include <GenericBase.h>
 #include <Laser.h>
 #include <Lidar3D.h>
@@ -50,6 +51,10 @@ public:
 
 
 
+	virtual RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimple_getAll(std::string camera) = 0;
+	virtual RoboCompCameraRGBDSimple::TDepth CameraRGBDSimple_getDepth(std::string camera) = 0;
+	virtual RoboCompCameraRGBDSimple::TImage CameraRGBDSimple_getImage(std::string camera) = 0;
+	virtual RoboCompCameraRGBDSimple::TPoints CameraRGBDSimple_getPoints(std::string camera) = 0;
 	virtual RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState) = 0;
 	virtual RoboCompLaser::LaserConfData Laser_getLaserConfData() = 0;
 	virtual RoboCompLaser::TLaserData Laser_getLaserData() = 0;

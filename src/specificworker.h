@@ -30,6 +30,9 @@
 #include <genericworker.h>
 #include <webots/Robot.hpp>
 #include <webots/Lidar.hpp>
+#include <webots/Camera.hpp>
+#include <webots/RangeFinder.hpp>
+
 
 class SpecificWorker : public GenericWorker
 {
@@ -39,27 +42,50 @@ public:
 	~SpecificWorker();
 	bool setParams(RoboCompCommonBehavior::ParameterList params);
 
+	RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimple_getAll(std::string camera);
+	RoboCompCameraRGBDSimple::TDepth CameraRGBDSimple_getDepth(std::string camera);
+	RoboCompCameraRGBDSimple::TImage CameraRGBDSimple_getImage(std::string camera);
+	RoboCompCameraRGBDSimple::TPoints CameraRGBDSimple_getPoints(std::string camera);
+
 	RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState);
 	RoboCompLaser::LaserConfData Laser_getLaserConfData();
 	RoboCompLaser::TLaserData Laser_getLaserData();
+
 	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor);
 
 
 public slots:
 	void compute();
 	int startup_check();
+
 	void initialize(int period);
 private:
 	bool startup_check_flag;
 
     webots::Robot* robot;
     webots::Lidar* lidar;
+    webots::Camera* camera;
+    webots::RangeFinder* range_finder;
+
+
 
     void receiving_lidarData(webots::Lidar* _lidar);
+    void receiving_cameraRGBData(webots::Camera* _camera);
+    void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
 
+    // Laser
     RoboCompLaser::TLaserData laserData;
     RoboCompLaser::LaserConfData laserDataConf;
+
+    // Lidar3d
     RoboCompLidar3D::TData lidar3dData;
+
+    // Camera RGBD simple
+    RoboCompCameraRGBDSimple::TDepth depthImage;
+    RoboCompCameraRGBDSimple::TImage cameraImage;
+
+    // Auxiliar functions
+    void printNotImplementedWarningMessage(string functionName);
 };
 
 #endif
