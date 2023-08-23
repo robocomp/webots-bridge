@@ -53,6 +53,8 @@ public:
 
 	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor);
 
+	RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight);
+
 
 public slots:
 	void compute();
@@ -66,12 +68,15 @@ private:
     webots::Lidar* lidar;
     webots::Camera* camera;
     webots::RangeFinder* range_finder;
+    webots::Camera* camera360_1;
+    webots::Camera* camera360_2;
 
 
 
     void receiving_lidarData(webots::Lidar* _lidar);
     void receiving_cameraRGBData(webots::Camera* _camera);
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
+    void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
 
     // Laser
     RoboCompLaser::TLaserData laserData;
@@ -83,6 +88,9 @@ private:
     // Camera RGBD simple
     RoboCompCameraRGBDSimple::TDepth depthImage;
     RoboCompCameraRGBDSimple::TImage cameraImage;
+
+    // Camera 360
+    RoboCompCamera360RGB::TImage camera360Image;
 
     // Auxiliar functions
     void printNotImplementedWarningMessage(string functionName);

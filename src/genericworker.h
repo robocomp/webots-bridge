@@ -24,6 +24,7 @@
 #include <qlog/qlog.h>
 #include <CommonBehavior.h>
 
+#include <Camera360RGB.h>
 #include <CameraRGBDSimple.h>
 #include <GenericBase.h>
 #include <Laser.h>
@@ -51,6 +52,7 @@ public:
 
 
 
+	virtual RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight) = 0;
 	virtual RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimple_getAll(std::string camera) = 0;
 	virtual RoboCompCameraRGBDSimple::TDepth CameraRGBDSimple_getDepth(std::string camera) = 0;
 	virtual RoboCompCameraRGBDSimple::TImage CameraRGBDSimple_getImage(std::string camera) = 0;

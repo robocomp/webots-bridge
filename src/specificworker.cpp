@@ -76,10 +76,16 @@ void SpecificWorker::initialize(int period)
     lidar = robot->getLidar("lidar");
     camera = robot->getCamera("camera");
     range_finder = robot->getRangeFinder("range-finder");
+    camera360_1 = robot->getCamera("camera_360_1");
+    camera360_2 = robot->getCamera("camera_360_2");
 
     if(lidar) lidar->enable(64);
     if(camera) camera->enable(64);
     if(range_finder) range_finder->enable(64);
+    if(camera360_1 && camera360_2){
+        camera360_1->enable(64);
+        camera360_2->enable(64);
+    }
 
     robot->step(100);
 }
@@ -90,6 +96,7 @@ void SpecificWorker::compute()
     if(lidar) receiving_lidarData(lidar);
     if(camera) receiving_cameraRGBData(camera);
     if(range_finder) receiving_depthImageData(range_finder);
+    if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
 
     robot->step(100);
 }
@@ -104,6 +111,68 @@ int SpecificWorker::startup_check()
 #pragma endregion Robocomp Methods
 
 #pragma region Data-Catching Methods
+
+void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2){
+    RoboCompCamera360RGB::TImage newImage360;
+
+    // Aseguramos de que ambas cámaras tienen la misma resolución, de lo contrario, deberás manejar las diferencias.
+    if (_camera1->getWidth() != _camera2->getWidth() || _camera1->getHeight() != _camera2->getHeight())
+    {
+        std::cerr << "Error: Cameras with different resolutions." << std::endl;
+        return;
+    }
+
+    // Establecer el periodo de refresco de la imagen en milisegundos.
+    newImage360.period = 100;
+
+    // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
+    newImage360.width = 2 * _camera1->getWidth();
+    newImage360.height = _camera1->getHeight();
+
+    const unsigned char* webotsImageData1 = _camera1->getImage();
+    const unsigned char* webotsImageData2 = _camera2->getImage();
+
+    // Crear un vector para la nueva imagen RGB 360.
+    std::vector<unsigned char> rgbImage360;
+    rgbImage360.reserve(3 * newImage360.width * newImage360.height);  // Reservar espacio para RGB
+
+    unsigned char r;
+    unsigned char g;
+    unsigned char b;
+
+    // Combinamos los pixeles de ambas cámaras en la nueva imagen.
+    for (int y = 0; y < _camera1->getHeight(); y++)
+    {
+        for (int x = 0; x < _camera1->getWidth(); x++)
+        {
+            r = _camera1->imageGetRed(webotsImageData1, _camera1->getWidth(), x, y);
+            g = _camera1->imageGetGreen(webotsImageData1, _camera1->getWidth(), x, y);
+            b = _camera1->imageGetBlue(webotsImageData1, _camera1->getWidth(), x, y);
+
+            rgbImage360.push_back(b);
+            rgbImage360.push_back(g);
+            rgbImage360.push_back(r);
+        }
+
+        for (int x = 0; x < _camera2->getWidth(); x++)
+        {
+            r = _camera2->imageGetRed(webotsImageData2, _camera2->getWidth(), x, y);
+            g = _camera2->imageGetGreen(webotsImageData2, _camera2->getWidth(), x, y);
+            b = _camera2->imageGetBlue(webotsImageData2, _camera2->getWidth(), x, y);
+
+            rgbImage360.push_back(b);
+            rgbImage360.push_back(g);
+            rgbImage360.push_back(r);
+        }
+    }
+
+    // Asignar la imagen RGB 360 al tipo TImage de Robocomp
+    newImage360.image = rgbImage360;
+    newImage360.compressed = false;
+
+    // Asignamos el resultado final al atributo de clase (si tienes uno).
+    this->camera360Image = newImage360;
+}
 
 void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
@@ -128,7 +197,6 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
     //std::cout << "horizontal resolution: " << horizontalResolution << " vertical resolution: " << verticalResolution << " fov: " << fov << " vertical fov: " << verticalFov << std::endl;
 
     if(!rangeImage) { std::cout << "Lidar data empty." << std::endl; return; }
-
 
     for (int j = 0; j < verticalResolution; ++j) {
         for (int i = 0; i < horizontalResolution; ++i) {
@@ -326,6 +394,75 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, in
 
 #pragma endregion Lidar
 
+#pragma region Camera360
+
+RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight)
+{
+    RoboCompCamera360RGB::TImage roiImage;
+    int MAX_WIDTH = camera360Image.width;
+    int MAX_HEIGHT = camera360Image.height;
+
+    if(sx == 0 || sy == 0)
+    {
+        std::cout << "No size. Sending complete image" << std::endl;
+        sx = MAX_WIDTH; sy = MAX_HEIGHT;
+        cx = (int)(MAX_WIDTH/2); cy = int(MAX_HEIGHT/2);
+    }
+    if(sx == -1)
+        sx = MAX_WIDTH;
+    if(sy == -1)
+        sy = MAX_HEIGHT;
+    if(cx == -1)
+        cx = (int)(MAX_WIDTH/2);
+    if(cy == -1)
+        cy = int(MAX_HEIGHT/2);
+    if(roiwidth == -1)
+        roiwidth = MAX_WIDTH;
+    if(roiheight == -1)
+        roiheight = MAX_HEIGHT;
+
+    // Check if y is out of range. Get max or min values in that case
+    if((cy - (int) (sy / 2)) < 0)
+    {
+        sx = (int) ((float) sx / (float) sy * 2 * cy );
+        sy = 2*cy;
+    }
+    else if((cy + (int) (sy / 2)) >= MAX_HEIGHT)
+    {
+        sx = (int) ((float) sx / (float) sy * 2 * (MAX_HEIGHT - cy) );
+        sy = 2 * (MAX_HEIGHT - cy);
+    }
+
+    roiImage.width = roiwidth;
+    roiImage.height = roiheight;
+    roiImage.period = camera360Image.period;
+    roiImage.compressed = false;
+
+    std::vector<unsigned char> roiImageData;
+    roiImageData.reserve(3 * roiwidth * roiheight);  // Reservar espacio para RGB
+
+    // Copia la región de interés de la imagen principal a la nueva imagen ROI.
+    for (int y = 0; y < roiheight; y++)
+    {
+        for (int x = 0; x < roiwidth; x++)
+        {
+            int index = 3 * ((cy + y + sy) * camera360Image.width + (cx + x + sx));
+
+            if (index >= 0 && index < camera360Image.image.size() - 3)
+            {
+                roiImageData.push_back(camera360Image.image[index]);     // B
+                roiImageData.push_back(camera360Image.image[index + 1]); // G
+                roiImageData.push_back(camera360Image.image[index + 2]); // R
+            }
+        }
+    }
+
+    roiImage.image = roiImageData;
+
+    return roiImage;
+}
+
+#pragma endregion Camera360
 
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
