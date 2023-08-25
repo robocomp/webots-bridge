@@ -408,58 +408,29 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
         sx = MAX_WIDTH; sy = MAX_HEIGHT;
         cx = (int)(MAX_WIDTH/2); cy = int(MAX_HEIGHT/2);
     }
-    if(sx == -1)
-        sx = MAX_WIDTH;
-    if(sy == -1)
-        sy = MAX_HEIGHT;
-    if(cx == -1)
-        cx = (int)(MAX_WIDTH/2);
-    if(cy == -1)
-        cy = int(MAX_HEIGHT/2);
-    if(roiwidth == -1)
-        roiwidth = MAX_WIDTH;
-    if(roiheight == -1)
-        roiheight = MAX_HEIGHT;
 
-    // Check if y is out of range. Get max or min values in that case
+    // Definir valores por defecto si no se especifican (-1).
+    sx = (sx == -1) ? MAX_WIDTH : sx;
+    sy = (sy == -1) ? MAX_HEIGHT : sy;
+    cx = (cx == -1) ? (int)(MAX_WIDTH/2) : cx;
+    cy = (cy == -1) ? (int)(MAX_HEIGHT/2) : cy;
+    roiwidth = (roiwidth == -1) ? MAX_WIDTH : roiwidth;
+    roiheight = (roiheight == -1) ? MAX_HEIGHT : roiheight;
+
+    // Ajustar el tamaño de la imagen si 'y' está por debajo del rango.
     if((cy - (int) (sy / 2)) < 0)
     {
         sx = (int) ((float) sx / (float) sy * 2 * cy );
         sy = 2*cy;
     }
+    // Ajustar el tamaño de la imagen si 'y' excede el rango máximo.
     else if((cy + (int) (sy / 2)) >= MAX_HEIGHT)
     {
         sx = (int) ((float) sx / (float) sy * 2 * (MAX_HEIGHT - cy) );
         sy = 2 * (MAX_HEIGHT - cy);
     }
 
-    roiImage.width = roiwidth;
-    roiImage.height = roiheight;
-    roiImage.period = camera360Image.period;
-    roiImage.compressed = false;
 
-    std::vector<unsigned char> roiImageData;
-    roiImageData.reserve(3 * roiwidth * roiheight);  // Reservar espacio para RGB
-
-    // Copia la región de interés de la imagen principal a la nueva imagen ROI.
-    for (int y = 0; y < roiheight; y++)
-    {
-        for (int x = 0; x < roiwidth; x++)
-        {
-            int index = 3 * ((cy + y + sy) * camera360Image.width + (cx + x + sx));
-
-            if (index >= 0 && index < camera360Image.image.size() - 3)
-            {
-                roiImageData.push_back(camera360Image.image[index]);     // B
-                roiImageData.push_back(camera360Image.image[index + 1]); // G
-                roiImageData.push_back(camera360Image.image[index + 2]); // R
-            }
-        }
-    }
-
-    roiImage.image = roiImageData;
-
-    return roiImage;
 }
 
 #pragma endregion Camera360

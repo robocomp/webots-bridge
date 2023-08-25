@@ -32,6 +32,9 @@
 #include <webots/Lidar.hpp>
 #include <webots/Camera.hpp>
 #include <webots/RangeFinder.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 
 
 class SpecificWorker : public GenericWorker
