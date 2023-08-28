@@ -123,7 +123,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     }
 
     // Establecer el periodo de refresco de la imagen en milisegundos.
-    newImage360.period = 100;
+    newImage360.period = 30;
 
     // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
     newImage360.width = 2 * _camera1->getWidth();
@@ -398,39 +398,7 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, in
 
 RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight)
 {
-    RoboCompCamera360RGB::TImage roiImage;
-    int MAX_WIDTH = camera360Image.width;
-    int MAX_HEIGHT = camera360Image.height;
-
-    if(sx == 0 || sy == 0)
-    {
-        std::cout << "No size. Sending complete image" << std::endl;
-        sx = MAX_WIDTH; sy = MAX_HEIGHT;
-        cx = (int)(MAX_WIDTH/2); cy = int(MAX_HEIGHT/2);
-    }
-
-    // Definir valores por defecto si no se especifican (-1).
-    sx = (sx == -1) ? MAX_WIDTH : sx;
-    sy = (sy == -1) ? MAX_HEIGHT : sy;
-    cx = (cx == -1) ? (int)(MAX_WIDTH/2) : cx;
-    cy = (cy == -1) ? (int)(MAX_HEIGHT/2) : cy;
-    roiwidth = (roiwidth == -1) ? MAX_WIDTH : roiwidth;
-    roiheight = (roiheight == -1) ? MAX_HEIGHT : roiheight;
-
-    // Ajustar el tamaño de la imagen si 'y' está por debajo del rango.
-    if((cy - (int) (sy / 2)) < 0)
-    {
-        sx = (int) ((float) sx / (float) sy * 2 * cy );
-        sy = 2*cy;
-    }
-    // Ajustar el tamaño de la imagen si 'y' excede el rango máximo.
-    else if((cy + (int) (sy / 2)) >= MAX_HEIGHT)
-    {
-        sx = (int) ((float) sx / (float) sy * 2 * (MAX_HEIGHT - cy) );
-        sy = 2 * (MAX_HEIGHT - cy);
-    }
-
-
+    return this->camera360Image;
 }
 
 #pragma endregion Camera360
