@@ -10,6 +10,9 @@ SET ( HEADERS
   specificmonitor.h
 )
 
+find_package(OpenCV REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
+
 # Disabling Pragma region warnings.
 add_definitions(-O3  -fmax-errors=1 -fno-char8_t -Wno-unknown-pragmas)
 
@@ -18,4 +21,3 @@ set(WEBOTS_HOME "/usr/local/webots")
 link_directories(${WEBOTS_HOME}/lib/controller)
 SET (LIBS -L/usr/local/webots/lib/controller Controller CppController)
 include_directories(${WEBOTS_HOME}/include/controller/c ${WEBOTS_HOME}/include/controller/cpp)
-
