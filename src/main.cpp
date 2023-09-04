@@ -85,7 +85,9 @@
 #include <camerargbdsimpleI.h>
 #include <laserI.h>
 #include <lidar3dI.h>
+#include <omnirobotI.h>
 
+#include <GenericBase.h>
 #include <GenericBase.h>
 
 
@@ -246,6 +248,24 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		}
 		catch (const IceStorm::TopicExists&){
 			cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for Lidar3D\n";
+		}
+
+
+		try
+		{
+			// Server adapter creation and publication
+			if (not GenericMonitor::configGetString(communicator(), prefix, "OmniRobot.Endpoints", tmp, ""))
+			{
+				cout << "[" << PROGRAM_NAME << "]: Can't read configuration for proxy OmniRobot";
+			}
+			Ice::ObjectAdapterPtr adapterOmniRobot = communicator()->createObjectAdapterWithEndpoints("OmniRobot", tmp);
+			auto omnirobot = std::make_shared<OmniRobotI>(worker);
+			adapterOmniRobot->add(omnirobot, Ice::stringToIdentity("omnirobot"));
+			adapterOmniRobot->activate();
+			cout << "[" << PROGRAM_NAME << "]: OmniRobot adapter created in port " << tmp << endl;
+		}
+		catch (const IceStorm::TopicExists&){
+			cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for OmniRobot\n";
 		}
 
 

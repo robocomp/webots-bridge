@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.10)
 
 
 IF ( "$ENV{ROBOCOMP}" STREQUAL "")
-  MESSAGE(WARNING "ROBOCOMP variable not set. Using the default value: /home/robocomp/robocomp")
-  SET (ENV{ROBOCOMP} "/home/robocomp/robocomp/")
+  MESSAGE(WARNING "ROBOCOMP variable not set. Using the default value: /opt/robocomp")
+  SET (ENV{ROBOCOMP} "/opt/robocomp/")
 ENDIF ( "$ENV{ROBOCOMP}" STREQUAL "")
 
 IF(NOT EXISTS $ENV{ROBOCOMP}/cmake)
@@ -28,6 +28,7 @@ SET ( SOURCES
   camerargbdsimpleI.cpp
   laserI.cpp
   lidar3dI.cpp
+  omnirobotI.cpp
 )
 
 
@@ -38,8 +39,8 @@ FIND_PACKAGE( Ice REQUIRED COMPONENTS Ice++11 IceStorm++11)
 
 #ROBOCOMP
 ROBOCOMP_INITIALIZE( $ENV{ROBOCOMP}/ )
-ROBOCOMP_IDSL_TO_ICE( CommonBehavior Camera360RGB CameraRGBDSimple GenericBase Laser Lidar3D)
-ROBOCOMP_ICE_TO_SRC( CommonBehavior Camera360RGB CameraRGBDSimple GenericBase Laser Lidar3D)
+ROBOCOMP_IDSL_TO_ICE( CommonBehavior Camera360RGB CameraRGBDSimple GenericBase GenericBase Laser Lidar3D OmniRobot)
+ROBOCOMP_ICE_TO_SRC( CommonBehavior Camera360RGB CameraRGBDSimple GenericBase GenericBase Laser Lidar3D OmniRobot)
 SET (EXECUTABLE_OUTPUT_PATH ${RC_COMPONENT_DEVEL_PATH}/bin)
 
 

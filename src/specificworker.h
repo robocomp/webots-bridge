@@ -32,10 +32,14 @@
 #include <webots/Lidar.hpp>
 #include <webots/Camera.hpp>
 #include <webots/RangeFinder.hpp>
-#include <opencv2/core.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgproc.hpp>
+#include <webots/Motor.hpp>
+#include <webots/PositionSensor.hpp>
 
+#define TIME_STEP 64
+// robot geometry
+#define WHEEL_RADIUS 0.05
+#define LX 0.228  // longitudinal distance from robot's COM to wheel [m].
+#define LY 0.158  // lateral distance from robot's COM to wheel [m].
 
 class SpecificWorker : public GenericWorker
 {
@@ -58,6 +62,15 @@ public:
 
 	RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight);
 
+	void OmniRobot_correctOdometer(int x, int z, float alpha);
+	void OmniRobot_getBasePose(int &x, int &z, float &alpha);
+	void OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state);
+	void OmniRobot_resetOdometer();
+	void OmniRobot_setOdometer(RoboCompGenericBase::TBaseState state);
+	void OmniRobot_setOdometerPose(int x, int z, float alpha);
+	void OmniRobot_setSpeedBase(float advx, float advz, float rot);
+	void OmniRobot_stopBase();
+
 
 public slots:
 	void compute();
@@ -73,8 +86,8 @@ private:
     webots::RangeFinder* range_finder;
     webots::Camera* camera360_1;
     webots::Camera* camera360_2;
-
-
+    webots::Motor *motors[4];
+    webots::PositionSensor *ps[4];
 
     void receiving_lidarData(webots::Lidar* _lidar);
     void receiving_cameraRGBData(webots::Camera* _camera);
