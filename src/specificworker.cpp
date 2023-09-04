@@ -73,18 +73,29 @@ void SpecificWorker::initialize(int period)
 
 	robot = new webots::Robot();
 
+    // Inicializa los motores y los sensores de posición.
+    const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
+    const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
+
     lidar = robot->getLidar("lidar");
     camera = robot->getCamera("camera");
     range_finder = robot->getRangeFinder("range-finder");
     camera360_1 = robot->getCamera("camera_360_1");
     camera360_2 = robot->getCamera("camera_360_2");
 
-    if(lidar) lidar->enable(64);
-    if(camera) camera->enable(64);
-    if(range_finder) range_finder->enable(64);
+    if(lidar) lidar->enable(TIME_STEP);
+    if(camera) camera->enable(TIME_STEP);
+    if(range_finder) range_finder->enable(TIME_STEP);
     if(camera360_1 && camera360_2){
-        camera360_1->enable(64);
-        camera360_2->enable(64);
+        camera360_1->enable(TIME_STEP);
+        camera360_2->enable(TIME_STEP);
+    }
+    for (int i = 0; i < 4; i++) {
+        motors[i] = robot->getMotor(motorNames[i]);
+        ps[i] = motors[i]->getPositionSensor();
+        ps[i]->enable(TIME_STEP);
+        motors[i]->setPosition(INFINITY); // Modo de velocidad.
+        motors[i]->setVelocity(0);
     }
 
     robot->step(100);
@@ -233,7 +244,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
     RoboCompCameraRGBDSimple::TImage newImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
-    newImage.period = 100;
+    newImage.period = TIME_STEP;
 
     // Obtener la resolución de la imagen.
     newImage.width = _camera->getWidth();
@@ -273,7 +284,7 @@ void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder)
     RoboCompCameraRGBDSimple::TDepth newDepthImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
-    newDepthImage.period = 100;
+    newDepthImage.period = TIME_STEP;
 
     // Obtener la resolución de la imagen de profundidad.
     newDepthImage.width = _rangeFinder->getWidth();
@@ -402,6 +413,68 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
 }
 
 #pragma endregion Camera360
+
+#pragma region OmniRobot
+
+void SpecificWorker::OmniRobot_correctOdometer(int x, int z, float alpha)
+{
+//implementCODE
+
+}
+
+void SpecificWorker::OmniRobot_getBasePose(int &x, int &z, float &alpha)
+{
+//implementCODE
+
+}
+
+void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state)
+{
+//implementCODE
+
+}
+
+void SpecificWorker::OmniRobot_resetOdometer()
+{
+//implementCODE
+
+}
+
+void SpecificWorker::OmniRobot_setOdometer(RoboCompGenericBase::TBaseState state)
+{
+//implementCODE
+
+}
+
+void SpecificWorker::OmniRobot_setOdometerPose(int x, int z, float alpha)
+{
+//implementCODE
+
+}
+
+void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
+{
+    double speeds[4];
+    speeds[0] = 1 / WHEEL_RADIUS * (advx + advz + (LX + LY) * rot);
+    speeds[1] = 1 / WHEEL_RADIUS * (advx - advz - (LX + LY) * rot);
+    speeds[2] = 1 / WHEEL_RADIUS * (advx - advz + (LX + LY) * rot);
+    speeds[3] = 1 / WHEEL_RADIUS * (advx + advz - (LX + LY) * rot);
+    printf("Speeds: vx=%.2f[m/s] vy=%.2f[m/s] ω=%.2f[rad/s]\n", advx, advz, rot);
+    for (int i = 0; i < 4; i++)
+    {
+        motors[i]->setVelocity(speeds[i]);
+    }
+}
+
+void SpecificWorker::OmniRobot_stopBase()
+{
+    for (int i = 0; i < 4; i++)
+    {
+        motors[i]->setVelocity(0);
+    }
+}
+
+#pragma endregion OmniRobot
 
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {

@@ -29,6 +29,7 @@
 #include <GenericBase.h>
 #include <Laser.h>
 #include <Lidar3D.h>
+#include <OmniRobot.h>
 
 
 #define CHECK_PERIOD 5000
@@ -61,6 +62,14 @@ public:
 	virtual RoboCompLaser::LaserConfData Laser_getLaserConfData() = 0;
 	virtual RoboCompLaser::TLaserData Laser_getLaserData() = 0;
 	virtual RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor) = 0;
+	virtual void OmniRobot_correctOdometer(int x, int z, float alpha) = 0;
+	virtual void OmniRobot_getBasePose(int &x, int &z, float &alpha) = 0;
+	virtual void OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state) = 0;
+	virtual void OmniRobot_resetOdometer() = 0;
+	virtual void OmniRobot_setOdometer(RoboCompGenericBase::TBaseState state) = 0;
+	virtual void OmniRobot_setOdometerPose(int x, int z, float alpha) = 0;
+	virtual void OmniRobot_setSpeedBase(float advx, float advz, float rot) = 0;
+	virtual void OmniRobot_stopBase() = 0;
 
 protected:
 
