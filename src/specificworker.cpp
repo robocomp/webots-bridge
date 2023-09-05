@@ -77,13 +77,15 @@ void SpecificWorker::initialize(int period)
     const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
     const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
 
-    lidar = robot->getLidar("lidar");
+    lidar_helios = robot->getLidar("helios");
+    lidar_pearl = robot->getLidar("pearl");
     camera = robot->getCamera("camera");
     range_finder = robot->getRangeFinder("range-finder");
     camera360_1 = robot->getCamera("camera_360_1");
     camera360_2 = robot->getCamera("camera_360_2");
 
-    if(lidar) lidar->enable(TIME_STEP);
+    if(lidar_helios) lidar_helios->enable(TIME_STEP);
+    if(lidar_pearl) lidar_pearl->enable(TIME_STEP);
     if(camera) camera->enable(TIME_STEP);
     if(range_finder) range_finder->enable(TIME_STEP);
     if(camera360_1 && camera360_2){
@@ -104,7 +106,8 @@ void SpecificWorker::initialize(int period)
 void SpecificWorker::compute()
 {
     // Getting the data from simulation.
-    if(lidar) receiving_lidarData(lidar);
+    if(lidar_helios) receiving_lidarData(lidar_helios, lidar3dData_helios);
+    if(lidar_pearl) receiving_lidarData(lidar_pearl, lidar3dData_pearl);
     if(camera) receiving_cameraRGBData(camera);
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
@@ -185,7 +188,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     this->camera360Image = newImage360;
 }
 
-void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
+void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData){
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
     const float *rangeImage = _lidar->getRangeImage();
@@ -228,7 +231,7 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
             point.z = distance * sin(verticalAngle);
 
 
-            //std::cout << "X: " << point.x << " Y: " << point.y << " Z: " << point.z << std::endl;
+            // std::cout << "X: " << point.x << " Y: " << point.y << " Z: " << point.z << std::endl;
 
             newLidar3dData.points.push_back(point);
             newLaserData.push_back(data);
@@ -237,7 +240,7 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar){
 
     laserData = newLaserData;
     laserDataConf = newLaserConfData;
-    lidar3dData = newLidar3dData;
+    _lidar3dData = newLidar3dData;
 }
 
 void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
@@ -367,40 +370,17 @@ RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserData()
 
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor)
 {
-    RoboCompLidar3D::TData filteredData;
-
-    double startRadians = start * M_PI / 180.0; // Convert to radians
-    double lenRadians = len * M_PI / 180.0; // Convert to radians
-    double endRadians = startRadians + lenRadians; // Precompute end angle
-
-    int counter = 0;
-    int decimationCounter = 0; // Use a separate counter for decimation
-
-    // Reserve space for points. If decimation is 1, at max we could have same number of points
-    if (decimationfactor == 1)
-    {
-        filteredData.points.reserve(lidar3dData.points.size());
+    if(name == "helios") {
+        return filterLidarData(lidar3dData_helios, start, len, decimationfactor);
     }
+    else if(name == "pearl")
+        return filterLidarData(lidar3dData_pearl, start, len, decimationfactor);
+    else{
+        cout << "Getting data from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
 
-    for (int i = 0; i < lidar3dData.points.size(); i++)
-    {
-        double angle = atan2(lidar3dData.points[i].y, lidar3dData.points[i].x) + M_PI; // Calculate angle in radians
-        if (angle >= startRadians && angle <= endRadians)
-        {
-            if (decimationCounter == 0) // Add decimation factor
-            {
-                filteredData.points.push_back(lidar3dData.points[i]);
-            }
-            counter++;
-            decimationCounter++;
-            if (decimationCounter == decimationfactor)
-            {
-                decimationCounter = 0; // Reset decimation counter
-            }
-        }
+        RoboCompLidar3D::TData emptyData;
+        return emptyData;
     }
-
-    return filteredData;
 }
 
 #pragma endregion Lidar
@@ -418,38 +398,32 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
 
 void SpecificWorker::OmniRobot_correctOdometer(int x, int z, float alpha)
 {
-//implementCODE
-
+    printNotImplementedWarningMessage("OmniRobot_correctOdometer");
 }
 
 void SpecificWorker::OmniRobot_getBasePose(int &x, int &z, float &alpha)
 {
-//implementCODE
-
+    printNotImplementedWarningMessage("OmniRobot_getBasePose");
 }
 
 void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state)
 {
-//implementCODE
-
+    printNotImplementedWarningMessage("OmniRobot_getBaseState");
 }
 
 void SpecificWorker::OmniRobot_resetOdometer()
 {
-//implementCODE
-
+    printNotImplementedWarningMessage("OmniRobot_resetOdometer");
 }
 
 void SpecificWorker::OmniRobot_setOdometer(RoboCompGenericBase::TBaseState state)
 {
-//implementCODE
-
+    printNotImplementedWarningMessage("OmniRobot_setOdometer");
 }
 
 void SpecificWorker::OmniRobot_setOdometerPose(int x, int z, float alpha)
 {
-//implementCODE
-
+    printNotImplementedWarningMessage("OmniRobot_setOdometerPose");
 }
 
 void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
@@ -475,6 +449,45 @@ void SpecificWorker::OmniRobot_stopBase()
 }
 
 #pragma endregion OmniRobot
+
+RoboCompLidar3D::TData SpecificWorker::filterLidarData(RoboCompLidar3D::TData _lidar3dData, int _start, int _len, int _decimationfactor){
+
+    RoboCompLidar3D::TData filteredData;
+
+    double startRadians = _start * M_PI / 180.0; // Convert to radians
+    double lenRadians = _len * M_PI / 180.0; // Convert to radians
+    double endRadians = startRadians + lenRadians; // Precompute end angle
+
+    int counter = 0;
+    int decimationCounter = 0; // Use a separate counter for decimation
+
+    // Reserve space for points. If decimation is 1, at max we could have same number of points
+    if (_decimationfactor == 1)
+    {
+        filteredData.points.reserve(_lidar3dData.points.size());
+    }
+
+    for (int i = 0; i < _lidar3dData.points.size(); i++)
+    {
+        double angle = atan2(_lidar3dData.points[i].y, _lidar3dData.points[i].x) + M_PI; // Calculate angle in radians
+        if (angle >= startRadians && angle <= endRadians)
+        {
+            if (decimationCounter == 0) // Add decimation factor
+            {
+                filteredData.points.push_back(_lidar3dData.points[i]);
+                //cout << "X: " << _lidar3dData.points[i].x << " Y: " << _lidar3dData.points[i].y << " Z: " << _lidar3dData.points[i].z << " " << endl;
+            }
+            counter++;
+            decimationCounter++;
+            if (decimationCounter == _decimationfactor)
+            {
+                decimationCounter = 0; // Reset decimation counter
+            }
+        }
+    }
+
+    return filteredData;
+}
 
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
