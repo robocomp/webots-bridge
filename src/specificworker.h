@@ -81,7 +81,8 @@ private:
 	bool startup_check_flag;
 
     webots::Robot* robot;
-    webots::Lidar* lidar;
+    webots::Lidar* lidar_helios;
+    webots::Lidar* lidar_pearl;
     webots::Camera* camera;
     webots::RangeFinder* range_finder;
     webots::Camera* camera360_1;
@@ -89,17 +90,20 @@ private:
     webots::Motor *motors[4];
     webots::PositionSensor *ps[4];
 
-    void receiving_lidarData(webots::Lidar* _lidar);
+    void receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData);
     void receiving_cameraRGBData(webots::Camera* _camera);
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
+
+    RoboCompLidar3D::TData filterLidarData(RoboCompLidar3D::TData _lidar3dData, int _start, int _len, int _decimationfactor);
 
     // Laser
     RoboCompLaser::TLaserData laserData;
     RoboCompLaser::LaserConfData laserDataConf;
 
     // Lidar3d
-    RoboCompLidar3D::TData lidar3dData;
+    RoboCompLidar3D::TData lidar3dData_helios;
+    RoboCompLidar3D::TData lidar3dData_pearl;
 
     // Camera RGBD simple
     RoboCompCameraRGBDSimple::TDepth depthImage;
