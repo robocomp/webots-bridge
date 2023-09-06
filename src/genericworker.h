@@ -27,6 +27,7 @@
 #include <Camera360RGB.h>
 #include <CameraRGBDSimple.h>
 #include <GenericBase.h>
+#include <JoystickAdapter.h>
 #include <Laser.h>
 #include <Lidar3D.h>
 #include <OmniRobot.h>
@@ -70,6 +71,7 @@ public:
 	virtual void OmniRobot_setOdometerPose(int x, int z, float alpha) = 0;
 	virtual void OmniRobot_setSpeedBase(float advx, float advz, float rot) = 0;
 	virtual void OmniRobot_stopBase() = 0;
+	virtual void JoystickAdapter_sendData (RoboCompJoystickAdapter::TData data) = 0;
 
 protected:
 
