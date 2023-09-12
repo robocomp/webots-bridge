@@ -3,12 +3,14 @@ import "Lidar3D.idsl";
 import "CameraRGBDSimple.idsl";
 import "Camera360RGB.idsl";
 import "OmniRobot.idsl";
+import "JoystickAdapter.idsl";
 
 Component Webots2Robocomp
 {
     Communications
     {
         implements Laser, Lidar3D, CameraRGBDSimple, Camera360RGB, OmniRobot;
+        subscribesTo JoystickAdapter;
     };
     language Cpp11;
 };

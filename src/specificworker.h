@@ -71,6 +71,7 @@ public:
 	void OmniRobot_setSpeedBase(float advx, float advz, float rot);
 	void OmniRobot_stopBase();
 
+	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
 public slots:
 	void compute();

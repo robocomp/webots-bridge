@@ -86,6 +86,7 @@
 #include <laserI.h>
 #include <lidar3dI.h>
 #include <omnirobotI.h>
+#include <joystickadapterI.h>
 
 #include <GenericBase.h>
 #include <GenericBase.h>
@@ -139,6 +140,23 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 
 	string proxy, tmp;
 	initialize();
+
+	IceStorm::TopicManagerPrxPtr topicManager;
+	try
+	{
+		topicManager = topicManager = Ice::checkedCast<IceStorm::TopicManagerPrx>(communicator()->propertyToProxy("TopicManager.Proxy"));
+		if (!topicManager)
+		{
+		    cout << "[" << PROGRAM_NAME << "]: TopicManager.Proxy not defined in config file."<<endl;
+		    cout << "	 Config line example: TopicManager.Proxy=IceStorm/TopicManager:default -p 9999"<<endl;
+	        return EXIT_FAILURE;
+		}
+	}
+	catch (const Ice::Exception &ex)
+	{
+		cout << "[" << PROGRAM_NAME << "]: Exception: 'rcnode' not running: " << ex << endl;
+		return EXIT_FAILURE;
+	}
 
 	tprx = std::tuple<>();
 	SpecificWorker *worker = new SpecificWorker(tprx, startup_check_flag);
@@ -270,6 +288,53 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 
 
 		// Server adapter creation and publication
+		std::shared_ptr<IceStorm::TopicPrx> joystickadapter_topic;
+		Ice::ObjectPrxPtr joystickadapter;
+		try
+		{
+			if (not GenericMonitor::configGetString(communicator(), prefix, "JoystickAdapterTopic.Endpoints", tmp, ""))
+			{
+				cout << "[" << PROGRAM_NAME << "]: Can't read configuration for proxy JoystickAdapterProxy";
+			}
+			Ice::ObjectAdapterPtr JoystickAdapter_adapter = communicator()->createObjectAdapterWithEndpoints("joystickadapter", tmp);
+			RoboCompJoystickAdapter::JoystickAdapterPtr joystickadapterI_ =  std::make_shared <JoystickAdapterI>(worker);
+			auto joystickadapter = JoystickAdapter_adapter->addWithUUID(joystickadapterI_)->ice_oneway();
+			if(!joystickadapter_topic)
+			{
+				try {
+					joystickadapter_topic = topicManager->create("JoystickAdapter");
+				}
+				catch (const IceStorm::TopicExists&) {
+					//Another client created the topic
+					try{
+						cout << "[" << PROGRAM_NAME << "]: Probably other client already opened the topic. Trying to connect.\n";
+						joystickadapter_topic = topicManager->retrieve("JoystickAdapter");
+					}
+					catch(const IceStorm::NoSuchTopic&)
+					{
+						cout << "[" << PROGRAM_NAME << "]: Topic doesn't exists and couldn't be created.\n";
+						//Error. Topic does not exist
+					}
+				}
+				catch(const IceUtil::NullHandleException&)
+				{
+					cout << "[" << PROGRAM_NAME << "]: ERROR TopicManager is Null. Check that your configuration file contains an entry like:\n"<<
+					"\t\tTopicManager.Proxy=IceStorm/TopicManager:default -p <port>\n";
+					return EXIT_FAILURE;
+				}
+				IceStorm::QoS qos;
+				joystickadapter_topic->subscribeAndGetPublisher(qos, joystickadapter);
+			}
+			JoystickAdapter_adapter->activate();
+		}
+		catch(const IceStorm::NoSuchTopic&)
+		{
+			cout << "[" << PROGRAM_NAME << "]: Error creating JoystickAdapter topic.\n";
+			//Error. Topic does not exist
+		}
+
+
+		// Server adapter creation and publication
 		cout << SERVER_FULL_NAME " started" << endl;
 
 		// User defined QtGui elements ( main window, dialogs, etc )
@@ -280,6 +345,16 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		#endif
 		// Run QT Application Event Loop
 		a.exec();
+
+		try
+		{
+			std::cout << "Unsubscribing topic: joystickadapter " <<std::endl;
+			joystickadapter_topic->unsubscribe( joystickadapter );
+		}
+		catch(const Ice::Exception& ex)
+		{
+			std::cout << "ERROR Unsubscribing topic: joystickadapter " << ex.what()<<std::endl;
+		}
 
 
 		status = EXIT_SUCCESS;

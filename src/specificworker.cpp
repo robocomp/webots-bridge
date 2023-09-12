@@ -77,6 +77,7 @@ void SpecificWorker::initialize(int period)
     const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
     const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
 
+    // Inicializa los sensores soportados.
     lidar_helios = robot->getLidar("helios");
     lidar_pearl = robot->getLidar("pearl");
     camera = robot->getCamera("camera");
@@ -84,6 +85,7 @@ void SpecificWorker::initialize(int period)
     camera360_1 = robot->getCamera("camera_360_1");
     camera360_2 = robot->getCamera("camera_360_2");
 
+    // Activa los componentes en la simulación si los detecta.
     if(lidar_helios) lidar_helios->enable(TIME_STEP);
     if(lidar_pearl) lidar_pearl->enable(TIME_STEP);
     if(camera) camera->enable(TIME_STEP);
@@ -100,6 +102,7 @@ void SpecificWorker::initialize(int period)
         motors[i]->setVelocity(0);
     }
 
+    // Realiza la primera iteración de simulación.
     robot->step(100);
 }
 
@@ -112,6 +115,8 @@ void SpecificWorker::compute()
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
 
+
+    // Setting the simulator timestep.
     robot->step(100);
 }
 
@@ -450,6 +455,44 @@ void SpecificWorker::OmniRobot_stopBase()
 
 #pragma endregion OmniRobot
 
+#pragma region JoystickAdapter
+
+//SUBSCRIPTION to sendData method from JoystickAdapter interface
+void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data)
+{
+    // Declaration of the structure to be filled
+    float advx, advz, rot;
+
+    /*
+    // Iterate through the list of buttons in the data structure
+    for (RoboCompJoystickAdapter::ButtonParams button : data.buttons) {
+        // Currently does nothing with the buttons
+    }
+    */
+
+    // Iterate through the list of axes in the data structure
+    for (RoboCompJoystickAdapter::AxisParams axis : data.axes){
+        // Process the axis according to its name
+        if(axis.name == "rotate") {
+            rot = axis.value;
+        }
+        else if (axis.name == "advance") {
+            advx = axis.value;
+        }
+        else if (axis.name == "side") {
+            advz = axis.value;
+        }
+        else {
+            cout << "[ JoystickAdapter ] Warning: Using a non-defined axes (" << axis.name << ")." << endl;
+        }
+    }
+
+    // Stablish new velocities through OmniRobot interfaces
+    OmniRobot_setSpeedBase(advx, advz, rot);
+}
+
+#pragma endregion JoystickAdapter
+
 RoboCompLidar3D::TData SpecificWorker::filterLidarData(RoboCompLidar3D::TData _lidar3dData, int _start, int _len, int _decimationfactor){
 
     RoboCompLidar3D::TData filteredData;
@@ -495,6 +538,19 @@ void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 }
 
 /**************************************/
+// From the RoboCompCamera360RGB you can use this types:
+// RoboCompCamera360RGB::TRoi
+// RoboCompCamera360RGB::TImage
+
+/**************************************/
+// From the RoboCompCameraRGBDSimple you can use this types:
+// RoboCompCameraRGBDSimple::Point3D
+// RoboCompCameraRGBDSimple::TPoints
+// RoboCompCameraRGBDSimple::TImage
+// RoboCompCameraRGBDSimple::TDepth
+// RoboCompCameraRGBDSimple::TRGBD
+
+/**************************************/
 // From the RoboCompLaser you can use this types:
 // RoboCompLaser::LaserConfData
 // RoboCompLaser::TData
@@ -502,4 +558,15 @@ void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 /**************************************/
 // From the RoboCompLidar3D you can use this types:
 // RoboCompLidar3D::TPoint
+// RoboCompLidar3D::TData
+
+/**************************************/
+// From the RoboCompOmniRobot you can use this types:
+// RoboCompOmniRobot::TMechParams
+
+/**************************************/
+// From the RoboCompJoystickAdapter you can use this types:
+// RoboCompJoystickAdapter::AxisParams
+// RoboCompJoystickAdapter::ButtonParams
+// RoboCompJoystickAdapter::TData
 
