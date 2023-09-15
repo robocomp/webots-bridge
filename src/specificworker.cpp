@@ -265,15 +265,17 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
             float horizontalAngle = i * newLaserConfData.angleRes - fov / 2;
             float verticalAngle = j * (verticalFov / verticalResolution) - verticalFov / 2;
 
+            //Calculate Cartesian co-ordinates and rectify axis positions
             Eigen::Vector3f point2process;
-            point2process.x() = distance * cos(horizontalAngle) * cos(verticalAngle);
-            point2process.y() = distance * sin(horizontalAngle) * cos(verticalAngle);
+            point2process.x() = -distance * sin(horizontalAngle) * cos(verticalAngle);
+            point2process.y() = distance * cos(horizontalAngle) * cos(verticalAngle);
             point2process.z() = distance * sin(verticalAngle);
 
             if (std::isinf(point2process.x()))
                 break;
+            //Apply extrinsic matix to point2process
             Eigen::Vector3f lidar_point = _extrinsic_matix.linear() * point2process + _extrinsic_matix.translation();
-            std::cout <<"point extrinc "<< lidar_point<< std::endl<<std::flush;
+
             if (isPointOutsideCube(lidar_point, box_min, box_max) and lidar_point.z() > floor_line)
             {
                 RoboCompLidar3D::TPoint point;
@@ -298,6 +300,8 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
             }
         }
     }
+    //Points order to angles
+    std::ranges::sort(newLidar3dData.points, {}, &RoboCompLidar3D::TPoint::phi);
 
     laserData = newLaserData;
     laserDataConf = newLaserConfData;
@@ -446,17 +450,34 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
 
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance)
 {
+    //Get LiDAR data
+    RoboCompLidar3D::TData buffer;
     if(name == "helios") {
-        return lidar3dData_helios;
+        buffer = lidar3dData_helios;
     }
     else if(name == "pearl")
-        return lidar3dData_pearl;
+        buffer = lidar3dData_pearl;
     else{
         cout << "Getting data with threshold from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
-
-        RoboCompLidar3D::TData emptyData;
-        return emptyData;
+        return {};
     }
+
+    #if DEBUG
+        auto cstart = std::chrono::high_resolution_clock::now();
+    #endif
+    
+    std::ranges::sort(buffer.points, {}, &RoboCompLidar3D::TPoint::distance2d);
+    RoboCompLidar3D::TPoints filtered_points(std::make_move_iterator(buffer.points.begin()), std::make_move_iterator(
+        std::find_if(buffer.points.begin(), buffer.points.end(),
+                [_distance=distance](const RoboCompLidar3D::TPoint& point) 
+                {return _distance < point.distance2d;})));
+    std::ranges::sort(buffer.points, {}, &RoboCompLidar3D::TPoint::phi);
+    
+    #if DEBUG
+        std::cout << "Time filter lidar: " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cstart).count() << " microseconds" << std::endl<<std::flush;
+    #endif
+
+    return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
 }
 
 #pragma endregion Lidar
@@ -564,44 +585,65 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 
 #pragma endregion JoystickAdapter
 
-RoboCompLidar3D::TData SpecificWorker::filterLidarData(RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationfactor){
+RoboCompLidar3D::TData SpecificWorker::filterLidarData(const RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationDegreeFactor){
 
-    RoboCompLidar3D::TData filteredData;
+    RoboCompLidar3D::TData buffer = _lidar3dData;
+// Check for nominal conditions
+    if(_len == 360  and _decimationDegreeFactor == 1)
+        return buffer;
 
-    double startRadians = _start * M_PI / 180.0; // Convert to radians
-    double lenRadians = _len * M_PI / 180.0; // Convert to radians
-    double endRadians = startRadians + lenRadians; // Precompute end angle
-
-    int counter = 0;
-    int decimationCounter = 0; // Use a separate counter for decimation
-
-    // Reserve space for points. If decimation is 1, at max we could have same number of points
-    if (_decimationfactor == 1)
-    {
-        qInfo()<<"Filtering size"<< _lidar3dData.points.size();
-        filteredData.points.reserve(_lidar3dData.points.size());
+    RoboCompLidar3D::TPoints filtered_points; 
+    //Get all LiDAR
+    if (_len == 360)
+        filtered_points = std::move(buffer.points);
+    //Cut range LiDAR
+    else{
+        //Start and end angles
+        auto rad_start = _start;
+        auto rad_end = _start + _len;
+        
+        //Start Iterator, this is the end if there are surpluses, otherwise it will be modified by the defined end.
+        auto it_begin = std::find_if(buffer.points.begin(), buffer.points.end(),
+                    [_start=rad_start](const RoboCompLidar3D::TPoint& point) 
+                    {return _start < point.phi;});
+        //End Iterator
+        auto it_end = buffer.points.end();
+        //The clipping exceeds 2pi, we assign the excess to the result
+        if (rad_end > 2 * M_PI)
+            filtered_points.assign(std::make_move_iterator(buffer.points.begin()), std::make_move_iterator(std::find_if(buffer.points.begin(), buffer.points.end(),
+                        [_end=rad_end - 2*M_PI](const RoboCompLidar3D::TPoint& point) 
+                        {return _end < point.phi;})));
+        else 
+            it_end = std::find_if(it_begin, buffer.points.end(),
+                        [_end=rad_end](const RoboCompLidar3D::TPoint& point)
+                        {return _end < point.phi;});
+        //we insert the cut with 2PI limit
+        filtered_points.insert(filtered_points.end(), std::make_move_iterator(it_begin), std::make_move_iterator(it_end));
+        #if DEBUG
+            std::cout << "Time prepare lidar: " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cstart).count() << " microseconds" << std::endl<<std::flush;
+        #endif
     }
+    //
+    if (_decimationDegreeFactor == 1)
+        return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
+    #if DEBUG   
+        cstart = std::chrono::high_resolution_clock::now();
+    #endif
 
-    for (int i = 0; i < _lidar3dData.points.size(); i++)
-    {
-        double angle = atan2(_lidar3dData.points[i].y, _lidar3dData.points[i].x) + M_PI; // Calculate angle in radians
-        if (angle >= startRadians && angle <= endRadians)
-        {
-            if (decimationCounter == 0) // Add decimation factor
-            {
-                filteredData.points.push_back(_lidar3dData.points[i]);
-                //cout << "X: " << _lidar3dData.points[i].x << " Y: " << _lidar3dData.points[i].y << " Z: " << _lidar3dData.points[i].z << " " << endl;
-            }
-            counter++;
-            decimationCounter++;
-            if (decimationCounter == _decimationfactor)
-            {
-                decimationCounter = 0; // Reset decimation counter
-            }
-        }
-    }
+    //Decimal factor calculation
+    float rad_factor = qDegreesToRadians((float)_decimationDegreeFactor);
+    float tolerance = qDegreesToRadians(0.5);
 
-    return filteredData;
+    //We remove the points that are of no interest 
+    filtered_points.erase(std::remove_if(filtered_points.begin(), filtered_points.end(),
+            [rad_factor, tolerance](const RoboCompLidar3D::TPoint& point) 
+            {float remainder = fmod(point.phi, rad_factor);
+                return !(remainder <= tolerance || remainder >= rad_factor - tolerance);
+            }), filtered_points.end());
+    #if DEBUG
+        std::cout << "Time for cut lidar: " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cstart).count() << " microseconds" << std::endl<<std::flush;
+    #endif
+    return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
 }
 
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)

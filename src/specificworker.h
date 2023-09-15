@@ -26,6 +26,7 @@
 
 #ifndef SPECIFICWORKER_H
 #define SPECIFICWORKER_H
+#define DEBUG 0
 
 #include <genericworker.h>
 #include <webots/Robot.hpp>
@@ -100,7 +101,7 @@ private:
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
 
-    RoboCompLidar3D::TData filterLidarData(RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationfactor);
+    RoboCompLidar3D::TData filterLidarData(const RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationDegreeFactor);
 
     // Laser
     RoboCompLaser::TLaserData laserData;
