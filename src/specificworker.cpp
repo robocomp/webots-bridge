@@ -45,8 +45,14 @@ SpecificWorker::~SpecificWorker()
 
 bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
 {
+    // Save locale setting
+    const std::string oldLocale=std::setlocale(LC_NUMERIC,nullptr);
+    // Force '.' as the radix point. If you comment this out,
+    // you'll get output similar to the OP's GUI mode sample
+    std::setlocale(LC_NUMERIC,"C");
     try
     {
+        
         //Helios extrinsic
         float rx, ry, rz, tx, ty, tz;
         rx = std::stof(params["helios_rx"].value);
@@ -91,8 +97,10 @@ bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
         std::cout<<"Hitbox max in millimetres:"<<std::endl<<this->box_max<<endl;
         std::cout<<"Floor line in millimetres:"<<std::endl<<this->floor_line<<endl;
     }catch (const std::exception &e)
-    { std::cout <<"Error reading the config \n" << e.what() << std::endl << std::flush; }
+    {std::cout <<"Error reading the config \n" << e.what() << std::endl << std::flush; }
 
+    // Restore locale setting
+    std::setlocale(LC_NUMERIC,oldLocale.c_str());
 	return true;
 }
 
