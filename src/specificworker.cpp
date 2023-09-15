@@ -45,15 +45,53 @@ SpecificWorker::~SpecificWorker()
 
 bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
 {
-//	THE FOLLOWING IS JUST AN EXAMPLE
-//	To use innerModelPath parameter you should uncomment specificmonitor.cpp readConfig method content
-//	try
-//	{
-//		RoboCompCommonBehavior::Parameter par = params.at("InnerModelPath");
-//		std::string innermodel_path = par.value;
-//		innerModel = std::make_shared(innermodel_path);
-//	}
-//	catch(const std::exception &e) { qFatal("Error reading config params"); }
+    try
+    {
+        //Helios extrinsic
+        float rx, ry, rz, tx, ty, tz;
+        rx = std::stof(params["helios_rx"].value);
+        ry = std::stof(params["helios_ry"].value);
+        rz = std::stof(params["helios_rz"].value);
+        tx = std::stof(params["helios_tx"].value);
+        ty = std::stof(params["helios_ty"].value);
+        tz = std::stof(params["helios_tz"].value);
+        this->extrinsic_helios = Eigen::Translation3f(Eigen::Vector3f(tx,ty,tz));
+        this->extrinsic_helios.rotate(Eigen::AngleAxisf (rx,Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf (ry, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rz, Eigen::Vector3f::UnitZ()));
+        std::cout<<"Helios Extrinsec Matrix:"<<std::endl<<this->extrinsic_helios.matrix()<<endl;
+
+        rx = std::stof(params["bpearl_rx"].value);
+        ry = std::stof(params["bpearl_ry"].value);
+        rz = std::stof(params["bpearl_rz"].value);
+        tx = std::stof(params["bpearl_tx"].value);
+        ty = std::stof(params["bpearl_ty"].value);
+        tz = std::stof(params["bpearl_tz"].value);
+        this->extrinsic_bpearl = Eigen::Translation3f(Eigen::Vector3f(tx,ty,tz));
+        this->extrinsic_bpearl.rotate(Eigen::AngleAxisf (rx,Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf (ry, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rz, Eigen::Vector3f::UnitZ()));
+        std::cout<<"Bpearl Extrinsec Matrix:"<<std::endl<<this->extrinsic_bpearl.matrix()<<endl;
+
+        //boundin box colision / hitbox
+        float center_box_x, center_box_y, center_box_z, size_box_x, size_box_y, size_box_z;
+        center_box_x = std::stof(params["center_box_x"].value);
+        center_box_y = std::stof(params["center_box_y"].value);
+        center_box_z = std::stof(params["center_box_z"].value);
+        size_box_x = std::stof(params["size_box_x"].value);
+        size_box_y = std::stof(params["size_box_y"].value);
+        size_box_z = std::stof(params["size_box_z"].value);
+
+        box_min.x() = center_box_x - size_box_x/2.0;//minx
+        box_min.y() = center_box_y - size_box_y/2.0;//miny
+        box_min.z() = center_box_z - size_box_z/2.0;//minz
+        box_max.x() = center_box_x + size_box_x/2.0;//maxx
+        box_max.y() = center_box_y + size_box_y/2.0;//maxy
+        box_max.z() = center_box_z + size_box_z/2.0;//maxz
+    
+        floor_line = std::stof(params["floor_line"].value);
+
+        std::cout<<"Hitbox min in millimetres:"<<std::endl<<this->box_min<<endl;
+        std::cout<<"Hitbox max in millimetres:"<<std::endl<<this->box_max<<endl;
+        std::cout<<"Floor line in millimetres:"<<std::endl<<this->floor_line<<endl;
+    }catch (const std::exception &e)
+    { std::cout <<"Error reading the config \n" << e.what() << std::endl << std::flush; }
 
 	return true;
 }
@@ -109,8 +147,8 @@ void SpecificWorker::initialize(int period)
 void SpecificWorker::compute()
 {
     // Getting the data from simulation.
-    if(lidar_helios) receiving_lidarData(lidar_helios, lidar3dData_helios);
-    if(lidar_pearl) receiving_lidarData(lidar_pearl, lidar3dData_pearl);
+    if(lidar_helios) receiving_lidarData(lidar_helios, lidar3dData_helios, extrinsic_helios);
+    if(lidar_pearl) receiving_lidarData(lidar_pearl, lidar3dData_pearl, extrinsic_bpearl);
     if(camera) receiving_cameraRGBData(camera);
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
@@ -193,7 +231,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     this->camera360Image = newImage360;
 }
 
-void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData){
+void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData, const Eigen::Affine3f &_extrinsic_matix){
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
     const float *rangeImage = _lidar->getRangeImage();
@@ -221,28 +259,43 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
         for (int i = 0; i < horizontalResolution; ++i) {
             int index = j * horizontalResolution + i;
 
-            const float distance = rangeImage[index];
+            //distance meters to millimeters
+            const float distance = rangeImage[index] * 1000;
 
             float horizontalAngle = i * newLaserConfData.angleRes - fov / 2;
             float verticalAngle = j * (verticalFov / verticalResolution) - verticalFov / 2;
 
-            RoboCompLaser::TData data;
-            data.angle = horizontalAngle;
-            data.dist = distance;
+            Eigen::Vector3f point2process;
+            point2process.x() = distance * cos(horizontalAngle) * cos(verticalAngle);
+            point2process.y() = distance * sin(horizontalAngle) * cos(verticalAngle);
+            point2process.z() = distance * sin(verticalAngle);
 
-            RoboCompLidar3D::TPoint point;
-            point.x = distance * cos(horizontalAngle) * cos(verticalAngle);
-            point.y = distance * sin(horizontalAngle) * cos(verticalAngle);
-            point.z = distance * sin(verticalAngle);
-            point.phi = horizontalAngle;  // ángulo horizontal
-            point.theta = verticalAngle;  // ángulo vertical
-            point.r = distance;  // distancia radial
-            point.distance2d = sqrt(point.x * point.x + point.y * point.y);  // distancia en el plano xy
+            if (std::isinf(point2process.x()))
+                break;
+            Eigen::Vector3f lidar_point = _extrinsic_matix.linear() * point2process + _extrinsic_matix.translation();
+            std::cout <<"point extrinc "<< lidar_point<< std::endl<<std::flush;
+            if (isPointOutsideCube(lidar_point, box_min, box_max) and lidar_point.z() > floor_line)
+            {
+                RoboCompLidar3D::TPoint point;
 
-            // std::cout << "X: " << point.x << " Y: " << point.y << " Z: " << point.z << std::endl;
+                point.x = lidar_point.x();
+                point.y = lidar_point.y();
+                point.z = lidar_point.z();
 
-            newLidar3dData.points.push_back(point);
-            newLaserData.push_back(data);
+                point.r = lidar_point.norm();  // distancia radial
+                point.phi = std::atan2(lidar_point.x(), -lidar_point.y())+M_PI;  // ángulo horizontal
+                point.theta = std::acos( lidar_point.z()/ point.r);  // ángulo vertical
+                point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
+
+                RoboCompLaser::TData data;
+                data.angle = point.phi;
+                data.dist = point.distance2d;
+
+                // std::cout << "X: " << point.x << " Y: " << point.y << " Z: " << point.z << std::endl;
+
+                newLidar3dData.points.push_back(point);
+                newLaserData.push_back(data);
+            }
         }
     }
 
@@ -376,13 +429,13 @@ RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserData()
     return laserData;
 }
 
-RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, float start, float len, int decimationfactor)
+RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor)
 {
     if(name == "helios") {
-        return filterLidarData(lidar3dData_helios, start, len, decimationfactor);
+        return filterLidarData(lidar3dData_helios, start, len, decimationDegreeFactor);
     }
     else if(name == "pearl")
-        return filterLidarData(lidar3dData_pearl, start, len, decimationfactor);
+        return filterLidarData(lidar3dData_pearl, start, len, decimationDegreeFactor);
     else{
         cout << "Getting data from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
 
@@ -525,6 +578,7 @@ RoboCompLidar3D::TData SpecificWorker::filterLidarData(RoboCompLidar3D::TData _l
     // Reserve space for points. If decimation is 1, at max we could have same number of points
     if (_decimationfactor == 1)
     {
+        qInfo()<<"Filtering size"<< _lidar3dData.points.size();
         filteredData.points.reserve(_lidar3dData.points.size());
     }
 
@@ -553,6 +607,12 @@ RoboCompLidar3D::TData SpecificWorker::filterLidarData(RoboCompLidar3D::TData _l
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
+}
+
+inline bool SpecificWorker::isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max) {
+    return  (point.x() < box_min.x() || point.x() > box_max.x()) ||
+            (point.y() < box_min.y() || point.y() > box_max.y()) ||
+            (point.z() < box_min.z() || point.z() > box_max.z());
 }
 
 /**************************************/
