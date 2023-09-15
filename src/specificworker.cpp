@@ -125,7 +125,7 @@ void SpecificWorker::initialize(int period)
 
     // Inicializa los sensores soportados.
     lidar_helios = robot->getLidar("helios");
-    lidar_pearl = robot->getLidar("pearl");
+    lidar_pearl = robot->getLidar("bpearl");
     camera = robot->getCamera("camera");
     range_finder = robot->getRangeFinder("range-finder");
     camera360_1 = robot->getCamera("camera_360_1");
@@ -463,7 +463,7 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::
     if(name == "helios") {
         buffer = lidar3dData_helios;
     }
-    else if(name == "pearl")
+    else if(name == "bpearl")
         buffer = lidar3dData_pearl;
     else{
         cout << "Getting data with threshold from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
