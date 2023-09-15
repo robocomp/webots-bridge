@@ -446,7 +446,7 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
     if(name == "helios") {
         return filterLidarData(lidar3dData_helios, start, len, decimationDegreeFactor);
     }
-    else if(name == "pearl")
+    else if(name == "bpearl")
         return filterLidarData(lidar3dData_pearl, start, len, decimationDegreeFactor);
     else{
         cout << "Getting data from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
