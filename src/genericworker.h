@@ -62,7 +62,8 @@ public:
 	virtual RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState) = 0;
 	virtual RoboCompLaser::LaserConfData Laser_getLaserConfData() = 0;
 	virtual RoboCompLaser::TLaserData Laser_getLaserData() = 0;
-	virtual RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor) = 0;
+	virtual RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor) = 0;
+	virtual RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance) = 0;
 	virtual void OmniRobot_correctOdometer(int x, int z, float alpha) = 0;
 	virtual void OmniRobot_getBasePose(int &x, int &z, float &alpha) = 0;
 	virtual void OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state) = 0;

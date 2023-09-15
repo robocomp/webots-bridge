@@ -234,7 +234,10 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
             point.x = distance * cos(horizontalAngle) * cos(verticalAngle);
             point.y = distance * sin(horizontalAngle) * cos(verticalAngle);
             point.z = distance * sin(verticalAngle);
-
+            point.phi = horizontalAngle;  // ángulo horizontal
+            point.theta = verticalAngle;  // ángulo vertical
+            point.r = distance;  // distancia radial
+            point.distance2d = sqrt(point.x * point.x + point.y * point.y);  // distancia en el plano xy
 
             // std::cout << "X: " << point.x << " Y: " << point.y << " Z: " << point.z << std::endl;
 
@@ -373,7 +376,7 @@ RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserData()
     return laserData;
 }
 
-RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor)
+RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, float start, float len, int decimationfactor)
 {
     if(name == "helios") {
         return filterLidarData(lidar3dData_helios, start, len, decimationfactor);
@@ -382,6 +385,21 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, in
         return filterLidarData(lidar3dData_pearl, start, len, decimationfactor);
     else{
         cout << "Getting data from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
+
+        RoboCompLidar3D::TData emptyData;
+        return emptyData;
+    }
+}
+
+RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance)
+{
+    if(name == "helios") {
+        return lidar3dData_helios;
+    }
+    else if(name == "pearl")
+        return lidar3dData_pearl;
+    else{
+        cout << "Getting data with threshold from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
 
         RoboCompLidar3D::TData emptyData;
         return emptyData;
@@ -493,7 +511,7 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 
 #pragma endregion JoystickAdapter
 
-RoboCompLidar3D::TData SpecificWorker::filterLidarData(RoboCompLidar3D::TData _lidar3dData, int _start, int _len, int _decimationfactor){
+RoboCompLidar3D::TData SpecificWorker::filterLidarData(RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationfactor){
 
     RoboCompLidar3D::TData filteredData;
 

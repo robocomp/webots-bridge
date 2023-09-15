@@ -58,7 +58,8 @@ public:
 	RoboCompLaser::LaserConfData Laser_getLaserConfData();
 	RoboCompLaser::TLaserData Laser_getLaserData();
 
-	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, int start, int len, int decimationfactor);
+	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor);
+	RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance);
 
 	RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight);
 
@@ -96,7 +97,7 @@ private:
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
 
-    RoboCompLidar3D::TData filterLidarData(RoboCompLidar3D::TData _lidar3dData, int _start, int _len, int _decimationfactor);
+    RoboCompLidar3D::TData filterLidarData(RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationfactor);
 
     // Laser
     RoboCompLaser::TLaserData laserData;
