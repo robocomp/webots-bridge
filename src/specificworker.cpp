@@ -270,8 +270,9 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
             //distance meters to millimeters
             const float distance = rangeImage[index] * 1000;
 
-            float horizontalAngle = i * newLaserConfData.angleRes - fov / 2;
-            float verticalAngle = j * (verticalFov / verticalResolution) - verticalFov / 2;
+            //TODO rotacion del eje y con el M_PI, solucionar
+            float horizontalAngle = M_PI - i * newLaserConfData.angleRes - fov / 2;
+            float verticalAngle = M_PI + j * (verticalFov / verticalResolution) - verticalFov / 2;
 
             //Calculate Cartesian co-ordinates and rectify axis positions
             Eigen::Vector3f point2process;
@@ -293,15 +294,13 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
                 point.z = lidar_point.z();
 
                 point.r = lidar_point.norm();  // distancia radial
-                point.phi = std::atan2(lidar_point.x(), -lidar_point.y())+M_PI;  // ángulo horizontal
+                point.phi = std::atan2(-lidar_point.x(), lidar_point.y());  // ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
                 point.theta = std::acos( lidar_point.z()/ point.r);  // ángulo vertical
                 point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
 
                 RoboCompLaser::TData data;
                 data.angle = point.phi;
                 data.dist = point.distance2d;
-
-                // std::cout << "X: " << point.x << " Y: " << point.y << " Z: " << point.z << std::endl;
 
                 newLidar3dData.points.push_back(point);
                 newLaserData.push_back(data);
@@ -617,7 +616,7 @@ RoboCompLidar3D::TData SpecificWorker::filterLidarData(const RoboCompLidar3D::TD
         //End Iterator
         auto it_end = buffer.points.end();
         //The clipping exceeds 2pi, we assign the excess to the result
-        if (rad_end > 2 * M_PI)
+        if (rad_end > M_PI)
             filtered_points.assign(std::make_move_iterator(buffer.points.begin()), std::make_move_iterator(std::find_if(buffer.points.begin(), buffer.points.end(),
                         [_end=rad_end - 2*M_PI](const RoboCompLidar3D::TPoint& point) 
                         {return _end < point.phi;})));
@@ -645,7 +644,7 @@ RoboCompLidar3D::TData SpecificWorker::filterLidarData(const RoboCompLidar3D::TD
     //We remove the points that are of no interest 
     filtered_points.erase(std::remove_if(filtered_points.begin(), filtered_points.end(),
             [rad_factor, tolerance](const RoboCompLidar3D::TPoint& point) 
-            {float remainder = fmod(point.phi, rad_factor);
+            {float remainder = abs(fmod(point.phi, rad_factor));
                 return !(remainder <= tolerance || remainder >= rad_factor - tolerance);
             }), filtered_points.end());
     #if DEBUG

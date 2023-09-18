@@ -19,19 +19,19 @@ TopicManager.Proxy=IceStorm/TopicManager:default -p 9999
 #Warning use "." for decimals not ","
 #Robosense Helios extrisec
 helios_rx=0.0
-helios_ry=3.14159265359
+helios_ry=0.0
 helios_rz=0.0
 helios_tx=0.0
-helios_ty=110.0
-helios_tz=580.0
+helios_ty=170.0
+helios_tz=1050.0
 
 #Robosense Bpearl extrisec
 bpearl_rx=0.0
-bpearl_ry=0.0
+bpearl_ry=3.14159265359
 bpearl_rz=0.0
 bpearl_tx=0.0
-bpearl_ty=-170.0
-bpearl_tz=1100.0
+bpearl_ty=110.0
+bpearl_tz=540.0
 
 # Robot hitbox
 center_box_x=0.0
