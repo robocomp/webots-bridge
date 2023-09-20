@@ -41,9 +41,9 @@
 
 #define TIME_STEP 64
 // robot geometry
-#define WHEEL_RADIUS 0.05
-#define LX 0.228  // longitudinal distance from robot's COM to wheel [m].
-#define LY 0.158  // lateral distance from robot's COM to wheel [m].
+#define WHEEL_RADIUS 0.08
+#define LX 0.135  // longitudinal distance from robot's COM to wheel [m].
+#define LY 0.237  // lateral distance from robot's COM to wheel [m].
 
 class SpecificWorker : public GenericWorker
 {
