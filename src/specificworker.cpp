@@ -45,16 +45,62 @@ SpecificWorker::~SpecificWorker()
 
 bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
 {
-//	THE FOLLOWING IS JUST AN EXAMPLE
-//	To use innerModelPath parameter you should uncomment specificmonitor.cpp readConfig method content
-//	try
-//	{
-//		RoboCompCommonBehavior::Parameter par = params.at("InnerModelPath");
-//		std::string innermodel_path = par.value;
-//		innerModel = std::make_shared(innermodel_path);
-//	}
-//	catch(const std::exception &e) { qFatal("Error reading config params"); }
+    // Save locale setting
+    const std::string oldLocale=std::setlocale(LC_NUMERIC,nullptr);
+    // Force '.' as the radix point. If you comment this out,
+    // you'll get output similar to the OP's GUI mode sample
+    std::setlocale(LC_NUMERIC,"C");
+    try
+    {
+        
+        //Helios extrinsic
+        float rx, ry, rz, tx, ty, tz;
+        rx = std::stof(params["helios_rx"].value);
+        ry = std::stof(params["helios_ry"].value);
+        rz = std::stof(params["helios_rz"].value);
+        tx = std::stof(params["helios_tx"].value);
+        ty = std::stof(params["helios_ty"].value);
+        tz = std::stof(params["helios_tz"].value);
+        this->extrinsic_helios = Eigen::Translation3f(Eigen::Vector3f(tx,ty,tz));
+        this->extrinsic_helios.rotate(Eigen::AngleAxisf (rx,Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf (ry, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rz, Eigen::Vector3f::UnitZ()));
+        std::cout<<"Helios Extrinsec Matrix:"<<std::endl<<this->extrinsic_helios.matrix()<<endl;
 
+        rx = std::stof(params["bpearl_rx"].value);
+        ry = std::stof(params["bpearl_ry"].value);
+        rz = std::stof(params["bpearl_rz"].value);
+        tx = std::stof(params["bpearl_tx"].value);
+        ty = std::stof(params["bpearl_ty"].value);
+        tz = std::stof(params["bpearl_tz"].value);
+        this->extrinsic_bpearl = Eigen::Translation3f(Eigen::Vector3f(tx,ty,tz));
+        this->extrinsic_bpearl.rotate(Eigen::AngleAxisf (rx,Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf (ry, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rz, Eigen::Vector3f::UnitZ()));
+        std::cout<<"Bpearl Extrinsec Matrix:"<<std::endl<<this->extrinsic_bpearl.matrix()<<endl;
+
+        //boundin box colision / hitbox
+        float center_box_x, center_box_y, center_box_z, size_box_x, size_box_y, size_box_z;
+        center_box_x = std::stof(params["center_box_x"].value);
+        center_box_y = std::stof(params["center_box_y"].value);
+        center_box_z = std::stof(params["center_box_z"].value);
+        size_box_x = std::stof(params["size_box_x"].value);
+        size_box_y = std::stof(params["size_box_y"].value);
+        size_box_z = std::stof(params["size_box_z"].value);
+
+        box_min.x() = center_box_x - size_box_x/2.0;//minx
+        box_min.y() = center_box_y - size_box_y/2.0;//miny
+        box_min.z() = center_box_z - size_box_z/2.0;//minz
+        box_max.x() = center_box_x + size_box_x/2.0;//maxx
+        box_max.y() = center_box_y + size_box_y/2.0;//maxy
+        box_max.z() = center_box_z + size_box_z/2.0;//maxz
+    
+        floor_line = std::stof(params["floor_line"].value);
+
+        std::cout<<"Hitbox min in millimetres:"<<std::endl<<this->box_min<<endl;
+        std::cout<<"Hitbox max in millimetres:"<<std::endl<<this->box_max<<endl;
+        std::cout<<"Floor line in millimetres:"<<std::endl<<this->floor_line<<endl;
+    }catch (const std::exception &e)
+    {std::cout <<"Error reading the config \n" << e.what() << std::endl << std::flush; }
+
+    // Restore locale setting
+    std::setlocale(LC_NUMERIC,oldLocale.c_str());
 	return true;
 }
 
@@ -79,7 +125,7 @@ void SpecificWorker::initialize(int period)
 
     // Inicializa los sensores soportados.
     lidar_helios = robot->getLidar("helios");
-    lidar_pearl = robot->getLidar("pearl");
+    lidar_pearl = robot->getLidar("bpearl");
     camera = robot->getCamera("camera");
     range_finder = robot->getRangeFinder("range-finder");
     camera360_1 = robot->getCamera("camera_360_1");
@@ -109,8 +155,8 @@ void SpecificWorker::initialize(int period)
 void SpecificWorker::compute()
 {
     // Getting the data from simulation.
-    if(lidar_helios) receiving_lidarData(lidar_helios, lidar3dData_helios);
-    if(lidar_pearl) receiving_lidarData(lidar_pearl, lidar3dData_pearl);
+    if(lidar_helios) receiving_lidarData(lidar_helios, lidar3dData_helios, extrinsic_helios);
+    if(lidar_pearl) receiving_lidarData(lidar_pearl, lidar3dData_pearl, extrinsic_bpearl);
     if(camera) receiving_cameraRGBData(camera);
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
@@ -193,7 +239,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     this->camera360Image = newImage360;
 }
 
-void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData){
+void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData, const Eigen::Affine3f &_extrinsic_matix){
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
     const float *rangeImage = _lidar->getRangeImage();
@@ -221,30 +267,48 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
         for (int i = 0; i < horizontalResolution; ++i) {
             int index = j * horizontalResolution + i;
 
-            const float distance = rangeImage[index];
+            //distance meters to millimeters
+            const float distance = rangeImage[index] * 1000;
 
-            float horizontalAngle = i * newLaserConfData.angleRes - fov / 2;
-            float verticalAngle = j * (verticalFov / verticalResolution) - verticalFov / 2;
+            //TODO rotacion del eje y con el M_PI, solucionar
+            float horizontalAngle = M_PI - i * newLaserConfData.angleRes - fov / 2;
+            float verticalAngle = M_PI + j * (verticalFov / verticalResolution) - verticalFov / 2;
 
-            RoboCompLaser::TData data;
-            data.angle = horizontalAngle;
-            data.dist = distance;
+            //Calculate Cartesian co-ordinates and rectify axis positions
+            Eigen::Vector3f point2process;
+            point2process.x() = -distance * sin(horizontalAngle) * cos(verticalAngle);
+            point2process.y() = distance * cos(horizontalAngle) * cos(verticalAngle);
+            point2process.z() = distance * sin(verticalAngle);
 
-            RoboCompLidar3D::TPoint point;
-            point.x = distance * cos(horizontalAngle) * cos(verticalAngle);
-            point.y = distance * sin(horizontalAngle) * cos(verticalAngle);
-            point.z = distance * sin(verticalAngle);
-            point.phi = horizontalAngle;  // ángulo horizontal
-            point.theta = verticalAngle;  // ángulo vertical
-            point.r = distance;  // distancia radial
-            point.distance2d = sqrt(point.x * point.x + point.y * point.y);  // distancia en el plano xy
+            if (std::isinf(point2process.x()))
+                break;
+            //Apply extrinsic matix to point2process
+            Eigen::Vector3f lidar_point = _extrinsic_matix.linear() * point2process + _extrinsic_matix.translation();
 
-            // std::cout << "X: " << point.x << " Y: " << point.y << " Z: " << point.z << std::endl;
+            if (isPointOutsideCube(lidar_point, box_min, box_max) and lidar_point.z() > floor_line)
+            {
+                RoboCompLidar3D::TPoint point;
 
-            newLidar3dData.points.push_back(point);
-            newLaserData.push_back(data);
+                point.x = lidar_point.x();
+                point.y = lidar_point.y();
+                point.z = lidar_point.z();
+
+                point.r = lidar_point.norm();  // distancia radial
+                point.phi = std::atan2(-lidar_point.x(), lidar_point.y());  // ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
+                point.theta = std::acos( lidar_point.z()/ point.r);  // ángulo vertical
+                point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
+
+                RoboCompLaser::TData data;
+                data.angle = point.phi;
+                data.dist = point.distance2d;
+
+                newLidar3dData.points.push_back(point);
+                newLaserData.push_back(data);
+            }
         }
     }
+    //Points order to angles
+    std::ranges::sort(newLidar3dData.points, {}, &RoboCompLidar3D::TPoint::phi);
 
     laserData = newLaserData;
     laserDataConf = newLaserConfData;
@@ -376,13 +440,13 @@ RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserData()
     return laserData;
 }
 
-RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, float start, float len, int decimationfactor)
+RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor)
 {
     if(name == "helios") {
-        return filterLidarData(lidar3dData_helios, start, len, decimationfactor);
+        return filterLidarData(lidar3dData_helios, start, len, decimationDegreeFactor);
     }
-    else if(name == "pearl")
-        return filterLidarData(lidar3dData_pearl, start, len, decimationfactor);
+    else if(name == "bpearl")
+        return filterLidarData(lidar3dData_pearl, start, len, decimationDegreeFactor);
     else{
         cout << "Getting data from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
 
@@ -393,17 +457,34 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
 
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance)
 {
+    //Get LiDAR data
+    RoboCompLidar3D::TData buffer;
     if(name == "helios") {
-        return lidar3dData_helios;
+        buffer = lidar3dData_helios;
     }
-    else if(name == "pearl")
-        return lidar3dData_pearl;
+    else if(name == "bpearl")
+        buffer = lidar3dData_pearl;
     else{
         cout << "Getting data with threshold from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
-
-        RoboCompLidar3D::TData emptyData;
-        return emptyData;
+        return {};
     }
+
+    #if DEBUG
+        auto cstart = std::chrono::high_resolution_clock::now();
+    #endif
+    
+    std::ranges::sort(buffer.points, {}, &RoboCompLidar3D::TPoint::distance2d);
+    RoboCompLidar3D::TPoints filtered_points(std::make_move_iterator(buffer.points.begin()), std::make_move_iterator(
+        std::find_if(buffer.points.begin(), buffer.points.end(),
+                [_distance=distance](const RoboCompLidar3D::TPoint& point) 
+                {return _distance < point.distance2d;})));
+    std::ranges::sort(buffer.points, {}, &RoboCompLidar3D::TPoint::phi);
+    
+    #if DEBUG
+        std::cout << "Time filter lidar: " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cstart).count() << " microseconds" << std::endl<<std::flush;
+    #endif
+
+    return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
 }
 
 #pragma endregion Lidar
@@ -511,48 +592,76 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 
 #pragma endregion JoystickAdapter
 
-RoboCompLidar3D::TData SpecificWorker::filterLidarData(RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationfactor){
+RoboCompLidar3D::TData SpecificWorker::filterLidarData(const RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationDegreeFactor){
 
-    RoboCompLidar3D::TData filteredData;
+    RoboCompLidar3D::TData buffer = _lidar3dData;
+// Check for nominal conditions
+    if(_len == 360  and _decimationDegreeFactor == 1)
+        return buffer;
 
-    double startRadians = _start * M_PI / 180.0; // Convert to radians
-    double lenRadians = _len * M_PI / 180.0; // Convert to radians
-    double endRadians = startRadians + lenRadians; // Precompute end angle
-
-    int counter = 0;
-    int decimationCounter = 0; // Use a separate counter for decimation
-
-    // Reserve space for points. If decimation is 1, at max we could have same number of points
-    if (_decimationfactor == 1)
-    {
-        filteredData.points.reserve(_lidar3dData.points.size());
+    RoboCompLidar3D::TPoints filtered_points; 
+    //Get all LiDAR
+    if (_len == 360)
+        filtered_points = std::move(buffer.points);
+    //Cut range LiDAR
+    else{
+        //Start and end angles
+        auto rad_start = _start;
+        auto rad_end = _start + _len;
+        
+        //Start Iterator, this is the end if there are surpluses, otherwise it will be modified by the defined end.
+        auto it_begin = std::find_if(buffer.points.begin(), buffer.points.end(),
+                    [_start=rad_start](const RoboCompLidar3D::TPoint& point) 
+                    {return _start < point.phi;});
+        //End Iterator
+        auto it_end = buffer.points.end();
+        //The clipping exceeds 2pi, we assign the excess to the result
+        if (rad_end > M_PI)
+            filtered_points.assign(std::make_move_iterator(buffer.points.begin()), std::make_move_iterator(std::find_if(buffer.points.begin(), buffer.points.end(),
+                        [_end=rad_end - 2*M_PI](const RoboCompLidar3D::TPoint& point) 
+                        {return _end < point.phi;})));
+        else 
+            it_end = std::find_if(it_begin, buffer.points.end(),
+                        [_end=rad_end](const RoboCompLidar3D::TPoint& point)
+                        {return _end < point.phi;});
+        //we insert the cut with 2PI limit
+        filtered_points.insert(filtered_points.end(), std::make_move_iterator(it_begin), std::make_move_iterator(it_end));
+        #if DEBUG
+            std::cout << "Time prepare lidar: " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cstart).count() << " microseconds" << std::endl<<std::flush;
+        #endif
     }
+    //
+    if (_decimationDegreeFactor == 1)
+        return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
+    #if DEBUG   
+        cstart = std::chrono::high_resolution_clock::now();
+    #endif
 
-    for (int i = 0; i < _lidar3dData.points.size(); i++)
-    {
-        double angle = atan2(_lidar3dData.points[i].y, _lidar3dData.points[i].x) + M_PI; // Calculate angle in radians
-        if (angle >= startRadians && angle <= endRadians)
-        {
-            if (decimationCounter == 0) // Add decimation factor
-            {
-                filteredData.points.push_back(_lidar3dData.points[i]);
-                //cout << "X: " << _lidar3dData.points[i].x << " Y: " << _lidar3dData.points[i].y << " Z: " << _lidar3dData.points[i].z << " " << endl;
-            }
-            counter++;
-            decimationCounter++;
-            if (decimationCounter == _decimationfactor)
-            {
-                decimationCounter = 0; // Reset decimation counter
-            }
-        }
-    }
+    //Decimal factor calculation
+    float rad_factor = qDegreesToRadians((float)_decimationDegreeFactor);
+    float tolerance = qDegreesToRadians(0.5);
 
-    return filteredData;
+    //We remove the points that are of no interest 
+    filtered_points.erase(std::remove_if(filtered_points.begin(), filtered_points.end(),
+            [rad_factor, tolerance](const RoboCompLidar3D::TPoint& point) 
+            {float remainder = abs(fmod(point.phi, rad_factor));
+                return !(remainder <= tolerance || remainder >= rad_factor - tolerance);
+            }), filtered_points.end());
+    #if DEBUG
+        std::cout << "Time for cut lidar: " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cstart).count() << " microseconds" << std::endl<<std::flush;
+    #endif
+    return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
 }
 
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
+}
+
+inline bool SpecificWorker::isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max) {
+    return  (point.x() < box_min.x() || point.x() > box_max.x()) ||
+            (point.y() < box_min.y() || point.y() > box_max.y()) ||
+            (point.z() < box_min.z() || point.z() > box_max.z());
 }
 
 /**************************************/

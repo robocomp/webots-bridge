@@ -26,6 +26,7 @@
 
 #ifndef SPECIFICWORKER_H
 #define SPECIFICWORKER_H
+#define DEBUG 0
 
 #include <genericworker.h>
 #include <webots/Robot.hpp>
@@ -35,11 +36,14 @@
 #include <webots/Motor.hpp>
 #include <webots/PositionSensor.hpp>
 
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
+
 #define TIME_STEP 64
 // robot geometry
-#define WHEEL_RADIUS 0.05
-#define LX 0.228  // longitudinal distance from robot's COM to wheel [m].
-#define LY 0.158  // lateral distance from robot's COM to wheel [m].
+#define WHEEL_RADIUS 0.08
+#define LX 0.135  // longitudinal distance from robot's COM to wheel [m].
+#define LY 0.237  // lateral distance from robot's COM to wheel [m].
 
 class SpecificWorker : public GenericWorker
 {
@@ -92,12 +96,12 @@ private:
     webots::Motor *motors[4];
     webots::PositionSensor *ps[4];
 
-    void receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData);
+    void receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData, const Eigen::Affine3f &_extrinsic_matix = Eigen::Affine3f::Identity());
     void receiving_cameraRGBData(webots::Camera* _camera);
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
 
-    RoboCompLidar3D::TData filterLidarData(RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationfactor);
+    RoboCompLidar3D::TData filterLidarData(const RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationDegreeFactor);
 
     // Laser
     RoboCompLaser::TLaserData laserData;
@@ -116,6 +120,13 @@ private:
 
     // Auxiliar functions
     void printNotImplementedWarningMessage(string functionName);
+
+	//Extrinsic
+	Eigen::Affine3f extrinsic_helios, extrinsic_bpearl;
+	Eigen::Vector3f box_min;
+	Eigen::Vector3f box_max;
+	float floor_line;
+	inline bool isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max);
 };
 
 #endif

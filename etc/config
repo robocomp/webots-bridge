@@ -15,6 +15,34 @@ JoystickAdapterTopic.Endpoints=tcp -p 11025
 # This property is used by the clients to connect to IceStorm.
 TopicManager.Proxy=IceStorm/TopicManager:default -p 9999
 
+
+#Warning use "." for decimals not ","
+#Robosense Helios extrisec
+helios_rx=0.0
+helios_ry=0.0
+helios_rz=0.0
+helios_tx=0.0
+helios_ty=170.0
+helios_tz=1050.0
+
+#Robosense Bpearl extrisec
+bpearl_rx=0.0
+bpearl_ry=3.14159265359
+bpearl_rz=0.0
+bpearl_tx=0.0
+bpearl_ty=110.0
+bpearl_tz=540.0
+
+# Robot hitbox
+center_box_x=0.0
+center_box_y=0.0
+center_box_z=552.5
+size_box_x=630.0
+size_box_y=600.0
+size_box_z=1150
+
+floor_line=-20.0
+
 InnerModelPath = innermodel.xml
 
 Ice.Warn.Connections=0
