@@ -4,7 +4,7 @@ CommonBehavior.Endpoints=tcp -p 10217
 Laser.Endpoints=tcp -p 10003
 Lidar3D.Endpoints=tcp -p 11988
 CameraRGBDSimple.Endpoints=tcp -p 10096
-Camera360RGB.Endpoints=tcp -p 10097
+Camera360RGB.Endpoints=tcp -p 10098
 OmniRobot.Endpoints=tcp -p 10004
 
 
