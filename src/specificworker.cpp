@@ -188,7 +188,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     }
 
     // Establecer el periodo de refresco de la imagen en milisegundos.
-    newImage360.period = 30;
+    newImage360.period = 33;
 
     // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
     newImage360.width = 2 * _camera1->getWidth();
@@ -533,10 +533,10 @@ void SpecificWorker::OmniRobot_setOdometerPose(int x, int z, float alpha)
 void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
 {
     double speeds[4];
-    speeds[0] = 1 / WHEEL_RADIUS * (advx + advz + (LX + LY) * rot);
-    speeds[1] = 1 / WHEEL_RADIUS * (advx - advz - (LX + LY) * rot);
-    speeds[2] = 1 / WHEEL_RADIUS * (advx - advz + (LX + LY) * rot);
-    speeds[3] = 1 / WHEEL_RADIUS * (advx + advz - (LX + LY) * rot);
+    speeds[0] = 1.0 / WHEEL_RADIUS * (advx + advz + (LX + LY) * rot);
+    speeds[1] = 1.0 / WHEEL_RADIUS * (advx - advz - (LX + LY) * rot);
+    speeds[2] = 1.0 / WHEEL_RADIUS * (advx - advz + (LX + LY) * rot);
+    speeds[3] = 1.0 / WHEEL_RADIUS * (advx + advz - (LX + LY) * rot);
     printf("Speeds: vx=%.2f[m/s] vy=%.2f[m/s] ω=%.2f[rad/s]\n", advx, advz, rot);
     for (int i = 0; i < 4; i++)
     {
@@ -586,7 +586,6 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
         }
     }
 
-    // Stablish new velocities through OmniRobot interfaces
     OmniRobot_setSpeedBase(advx, advz, rot);
 }
 
