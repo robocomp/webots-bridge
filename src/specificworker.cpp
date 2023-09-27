@@ -294,7 +294,7 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
                 point.z = lidar_point.z();
 
                 point.r = lidar_point.norm();  // distancia radial
-                point.phi = std::atan2(-lidar_point.x(), lidar_point.y());  // ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
+                point.phi = std::atan2(lidar_point.x(), lidar_point.y());  // ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
                 point.theta = std::acos( lidar_point.z()/ point.r);  // ángulo vertical
                 point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
 
