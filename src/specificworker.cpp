@@ -117,7 +117,8 @@ void SpecificWorker::initialize(int period)
 		timer.start(Period);
 	}
 
-	robot = new webots::Robot();
+    // Inicialización del shadow.
+	robot = new webots::Supervisor();
 
     // Inicializa los motores y los sensores de posición.
     const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
@@ -147,6 +148,18 @@ void SpecificWorker::initialize(int period)
         motors[i]->setPosition(INFINITY); // Modo de velocidad.
         motors[i]->setVelocity(0);
     }
+
+    // Inicializa los humanos en la escena
+    for (int i = 0; i < NUMBER_OF_HUMANS_IN_SCENE; i++) {
+        humans[i] = robot->getFromDef("HUMAN_" + to_string(i));
+        if (humans[i] == NULL) {
+            std::cerr << "No DEF HUMAN_" + to_string(i) + " node found in the current world file" << std::endl;
+            continue;
+        }
+    }
+
+    // Mensaje de ejecución correcta
+    cout << "Running..." << endl;
 
     // Realiza la primera iteración de simulación.
     robot->step(100);
@@ -553,6 +566,53 @@ void SpecificWorker::OmniRobot_stopBase()
 }
 
 #pragma endregion OmniRobot
+
+#pragma region OmniRobotMulti
+
+void SpecificWorker::OmniRobotMulti_getBasePose(int robotId, int &x, int &z, float &alpha)
+{
+    if(robotId > NUMBER_OF_HUMANS_IN_SCENE-1){
+        cerr << "OmniRobotMulti_getBasePose: Robot identifier mayor than number of humans in scene" << endl;
+        return;
+    }
+
+    const double* translation = humans[robotId]->getField("translation")->getSFVec3f();
+    const double* rotation = humans[robotId]->getField("rotation")->getSFVec3f();
+
+    x = translation[0];
+    z = translation[2];
+    alpha = rotation[0];
+}
+
+void SpecificWorker::OmniRobotMulti_setSpeedBase(int robotId, float advx, float advz, float rot)
+{
+//implementCODE
+
+}
+
+void SpecificWorker::OmniRobotMulti_stopBase(int robotId)
+{
+//implementCODE
+
+}
+
+#pragma endregion OmniRobotMulti
+
+#pragma region LaserMulti
+
+RoboCompLaserMulti::LaserConfData SpecificWorker::LaserMulti_getLaserConfData(int robotid)
+{
+//implementCODE
+
+}
+
+RoboCompLaserMulti::TLaserData SpecificWorker::LaserMulti_getLaserData(int robotid)
+{
+//implementCODE
+
+}
+
+#pragma endregion LaserMulti
 
 #pragma region JoystickAdapter
 

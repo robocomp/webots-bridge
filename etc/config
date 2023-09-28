@@ -6,6 +6,8 @@ Lidar3D.Endpoints=tcp -p 11988
 CameraRGBDSimple.Endpoints=tcp -p 10096
 Camera360RGB.Endpoints=tcp -p 10098
 OmniRobot.Endpoints=tcp -p 10004
+OmniRobotMulti.Endpoints=tcp -p 10010
+LaserMulti.Endpoints=tcp -p 10011
 
 
 # Endpoints for subscriptions interfaces

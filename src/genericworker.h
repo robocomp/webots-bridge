@@ -29,8 +29,10 @@
 #include <GenericBase.h>
 #include <JoystickAdapter.h>
 #include <Laser.h>
+#include <LaserMulti.h>
 #include <Lidar3D.h>
 #include <OmniRobot.h>
+#include <OmniRobotMulti.h>
 
 
 #define CHECK_PERIOD 5000
@@ -62,6 +64,8 @@ public:
 	virtual RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState) = 0;
 	virtual RoboCompLaser::LaserConfData Laser_getLaserConfData() = 0;
 	virtual RoboCompLaser::TLaserData Laser_getLaserData() = 0;
+	virtual RoboCompLaserMulti::LaserConfData LaserMulti_getLaserConfData(int robotid) = 0;
+	virtual RoboCompLaserMulti::TLaserData LaserMulti_getLaserData(int robotid) = 0;
 	virtual RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor) = 0;
 	virtual RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance) = 0;
 	virtual void OmniRobot_correctOdometer(int x, int z, float alpha) = 0;
@@ -72,6 +76,9 @@ public:
 	virtual void OmniRobot_setOdometerPose(int x, int z, float alpha) = 0;
 	virtual void OmniRobot_setSpeedBase(float advx, float advz, float rot) = 0;
 	virtual void OmniRobot_stopBase() = 0;
+	virtual void OmniRobotMulti_getBasePose(int robotId, int &x, int &z, float &alpha) = 0;
+	virtual void OmniRobotMulti_setSpeedBase(int robotId, float advx, float advz, float rot) = 0;
+	virtual void OmniRobotMulti_stopBase(int robotId) = 0;
 	virtual void JoystickAdapter_sendData (RoboCompJoystickAdapter::TData data) = 0;
 
 protected:

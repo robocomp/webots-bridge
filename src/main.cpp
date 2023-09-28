@@ -84,10 +84,14 @@
 #include <camera360rgbI.h>
 #include <camerargbdsimpleI.h>
 #include <laserI.h>
+#include <lasermultiI.h>
 #include <lidar3dI.h>
 #include <omnirobotI.h>
+#include <omnirobotmultiI.h>
 #include <joystickadapterI.h>
 
+#include <GenericBase.h>
+#include <GenericBase.h>
 #include <GenericBase.h>
 #include <GenericBase.h>
 
@@ -254,6 +258,24 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			// Server adapter creation and publication
+			if (not GenericMonitor::configGetString(communicator(), prefix, "LaserMulti.Endpoints", tmp, ""))
+			{
+				cout << "[" << PROGRAM_NAME << "]: Can't read configuration for proxy LaserMulti";
+			}
+			Ice::ObjectAdapterPtr adapterLaserMulti = communicator()->createObjectAdapterWithEndpoints("LaserMulti", tmp);
+			auto lasermulti = std::make_shared<LaserMultiI>(worker);
+			adapterLaserMulti->add(lasermulti, Ice::stringToIdentity("lasermulti"));
+			adapterLaserMulti->activate();
+			cout << "[" << PROGRAM_NAME << "]: LaserMulti adapter created in port " << tmp << endl;
+		}
+		catch (const IceStorm::TopicExists&){
+			cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for LaserMulti\n";
+		}
+
+
+		try
+		{
+			// Server adapter creation and publication
 			if (not GenericMonitor::configGetString(communicator(), prefix, "Lidar3D.Endpoints", tmp, ""))
 			{
 				cout << "[" << PROGRAM_NAME << "]: Can't read configuration for proxy Lidar3D";
@@ -284,6 +306,24 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		}
 		catch (const IceStorm::TopicExists&){
 			cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for OmniRobot\n";
+		}
+
+
+		try
+		{
+			// Server adapter creation and publication
+			if (not GenericMonitor::configGetString(communicator(), prefix, "OmniRobotMulti.Endpoints", tmp, ""))
+			{
+				cout << "[" << PROGRAM_NAME << "]: Can't read configuration for proxy OmniRobotMulti";
+			}
+			Ice::ObjectAdapterPtr adapterOmniRobotMulti = communicator()->createObjectAdapterWithEndpoints("OmniRobotMulti", tmp);
+			auto omnirobotmulti = std::make_shared<OmniRobotMultiI>(worker);
+			adapterOmniRobotMulti->add(omnirobotmulti, Ice::stringToIdentity("omnirobotmulti"));
+			adapterOmniRobotMulti->activate();
+			cout << "[" << PROGRAM_NAME << "]: OmniRobotMulti adapter created in port " << tmp << endl;
+		}
+		catch (const IceStorm::TopicExists&){
+			cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for OmniRobotMulti\n";
 		}
 
 

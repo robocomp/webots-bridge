@@ -35,15 +35,20 @@
 #include <webots/RangeFinder.hpp>
 #include <webots/Motor.hpp>
 #include <webots/PositionSensor.hpp>
+#include <webots/Supervisor.hpp>
+#include <webots/Node.hpp>
+#include <webots/Field.hpp>
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
 #define TIME_STEP 64
-// robot geometry
+// Robot geometry
 #define WHEEL_RADIUS 0.08
 #define LX 0.135  // longitudinal distance from robot's COM to wheel [m].
 #define LY 0.237  // lateral distance from robot's COM to wheel [m].
+// Human control
+#define NUMBER_OF_HUMANS_IN_SCENE 1
 
 class SpecificWorker : public GenericWorker
 {
@@ -76,6 +81,13 @@ public:
 	void OmniRobot_setSpeedBase(float advx, float advz, float rot);
 	void OmniRobot_stopBase();
 
+	RoboCompLaserMulti::LaserConfData LaserMulti_getLaserConfData(int robotid);
+	RoboCompLaserMulti::TLaserData LaserMulti_getLaserData(int robotid);
+
+	void OmniRobotMulti_getBasePose(int robotId, int &x, int &z, float &alpha);
+	void OmniRobotMulti_setSpeedBase(int robotId, float advx, float advz, float rot);
+	void OmniRobotMulti_stopBase(int robotId);
+
 	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
 public slots:
@@ -86,7 +98,7 @@ public slots:
 private:
 	bool startup_check_flag;
 
-    webots::Robot* robot;
+    webots::Supervisor* robot;
     webots::Lidar* lidar_helios;
     webots::Lidar* lidar_pearl;
     webots::Camera* camera;
@@ -95,6 +107,7 @@ private:
     webots::Camera* camera360_2;
     webots::Motor *motors[4];
     webots::PositionSensor *ps[4];
+    webots::Node* humans[NUMBER_OF_HUMANS_IN_SCENE];
 
     void receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData, const Eigen::Affine3f &_extrinsic_matix = Eigen::Affine3f::Identity());
     void receiving_cameraRGBData(webots::Camera* _camera);
