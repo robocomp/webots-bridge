@@ -580,7 +580,7 @@ void SpecificWorker::OmniRobotMulti_getBasePose(int robotId, int &x, int &z, flo
     const double* rotation = humans[robotId]->getField("rotation")->getSFVec3f();
 
     x = translation[0];
-    z = translation[2];
+    z = translation[1];
     alpha = rotation[0];
 }
 
