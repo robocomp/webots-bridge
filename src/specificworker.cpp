@@ -571,8 +571,7 @@ void SpecificWorker::OmniRobot_stopBase()
 
 void SpecificWorker::OmniRobotMulti_getBasePose(int robotId, int &x, int &z, float &alpha)
 {
-    if(robotId > NUMBER_OF_HUMANS_IN_SCENE-1){
-        cerr << "OmniRobotMulti_getBasePose: Robot identifier mayor than number of humans in scene" << endl;
+    if(!checkIfHumanExists(robotId, "OmniRobotMulti_getBasePose")){
         return;
     }
 
@@ -586,14 +585,22 @@ void SpecificWorker::OmniRobotMulti_getBasePose(int robotId, int &x, int &z, flo
 
 void SpecificWorker::OmniRobotMulti_setSpeedBase(int robotId, float advx, float advz, float rot)
 {
-//implementCODE
+    if(!checkIfHumanExists(robotId, "OmniRobotMulti_setSpeedBase")){
+        return;
+    }
 
+    double velocity[6] = {advx/1000, advz/1000, 0, 0, 0, rot};
+    humans[robotId]->setVelocity(velocity);
 }
 
 void SpecificWorker::OmniRobotMulti_stopBase(int robotId)
 {
-//implementCODE
+    if(!checkIfHumanExists(robotId, "OmniRobotMulti_stopBase")){
+        return;
+    }
 
+    double velocity[6] = {advx/1000, advz/1000, 0, 0, 0, rot};
+    humans[robotId]->setVelocity(velocity);
 }
 
 #pragma endregion OmniRobotMulti
@@ -715,6 +722,29 @@ RoboCompLidar3D::TData SpecificWorker::filterLidarData(const RoboCompLidar3D::TD
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
+}
+
+bool SpecificWorker::checkIfHumanExists(int robotID, string functionName){
+
+    string headerMessage;
+
+    if(!functionName.empty())
+        headerMessage = "[" + functionName + "]: ";
+    else
+        headerMessage = "";
+
+    if(robotID > NUMBER_OF_HUMANS_IN_SCENE-1){
+        cerr << headerMessage << "Robot identifier mayor than number of humans in scene." << endl;
+        return false;
+    }
+
+    webots::Node* human = humans[robotID];
+    if(human)
+        return true;
+    else{
+        cerr << headerMessage << "Robot with identifier [" << robotID << "] doesn't been defined. Check DEF of your humans in Webots scene." << endl;
+        return false;
+    }
 }
 
 inline bool SpecificWorker::isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max) {

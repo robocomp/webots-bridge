@@ -133,6 +133,7 @@ private:
 
     // Auxiliar functions
     void printNotImplementedWarningMessage(string functionName);
+    bool checkIfHumanExists(int robotID, string functionName = "");
 
 	//Extrinsic
 	Eigen::Affine3f extrinsic_helios, extrinsic_bpearl;
