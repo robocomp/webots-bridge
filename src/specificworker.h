@@ -98,6 +98,7 @@ public slots:
 private:
 	bool startup_check_flag;
 
+    // Webots types
     webots::Supervisor* robot;
     webots::Lidar* lidar_helios;
     webots::Lidar* lidar_pearl;
@@ -107,7 +108,13 @@ private:
     webots::Camera* camera360_2;
     webots::Motor *motors[4];
     webots::PositionSensor *ps[4];
-    webots::Node* humans[NUMBER_OF_HUMANS_IN_SCENE];
+
+    // Custom types
+    struct SimulationHuman{
+        webots::Node* node;
+        webots::Lidar* lidar;
+    };
+    SimulationHuman humans[NUMBER_OF_HUMANS_IN_SCENE];
 
     void receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData, const Eigen::Affine3f &_extrinsic_matix = Eigen::Affine3f::Identity());
     void receiving_cameraRGBData(webots::Camera* _camera);
@@ -134,6 +141,7 @@ private:
     // Auxiliar functions
     void printNotImplementedWarningMessage(string functionName);
     bool checkIfHumanExists(int robotID, string functionName = "");
+    void initWebotsScene();
 
 	//Extrinsic
 	Eigen::Affine3f extrinsic_helios, extrinsic_bpearl;

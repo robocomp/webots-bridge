@@ -117,52 +117,11 @@ void SpecificWorker::initialize(int period)
 		timer.start(Period);
 	}
 
-    // Inicialización del shadow.
-	robot = new webots::Supervisor();
-
-    // Inicializa los motores y los sensores de posición.
-    const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
-    const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
-
-    // Inicializa los sensores soportados.
-    lidar_helios = robot->getLidar("helios");
-    lidar_pearl = robot->getLidar("bpearl");
-    camera = robot->getCamera("camera");
-    range_finder = robot->getRangeFinder("range-finder");
-    camera360_1 = robot->getCamera("camera_360_1");
-    camera360_2 = robot->getCamera("camera_360_2");
-
-    // Activa los componentes en la simulación si los detecta.
-    if(lidar_helios) lidar_helios->enable(TIME_STEP);
-    if(lidar_pearl) lidar_pearl->enable(TIME_STEP);
-    if(camera) camera->enable(TIME_STEP);
-    if(range_finder) range_finder->enable(TIME_STEP);
-    if(camera360_1 && camera360_2){
-        camera360_1->enable(TIME_STEP);
-        camera360_2->enable(TIME_STEP);
-    }
-    for (int i = 0; i < 4; i++) {
-        motors[i] = robot->getMotor(motorNames[i]);
-        ps[i] = motors[i]->getPositionSensor();
-        ps[i]->enable(TIME_STEP);
-        motors[i]->setPosition(INFINITY); // Modo de velocidad.
-        motors[i]->setVelocity(0);
-    }
-
-    // Inicializa los humanos en la escena
-    for (int i = 0; i < NUMBER_OF_HUMANS_IN_SCENE; i++) {
-        humans[i] = robot->getFromDef("HUMAN_" + to_string(i));
-        if (humans[i] == NULL) {
-            std::cerr << "No DEF HUMAN_" + to_string(i) + " node found in the current world file" << std::endl;
-            continue;
-        }
-    }
+    // Inicializacion de los componentes en la escena de Webots
+    initWebotsScene();
 
     // Mensaje de ejecución correcta
     cout << "Running..." << endl;
-
-    // Realiza la primera iteración de simulación.
-    robot->step(100);
 }
 
 void SpecificWorker::compute()
@@ -575,8 +534,8 @@ void SpecificWorker::OmniRobotMulti_getBasePose(int robotId, int &x, int &z, flo
         return;
     }
 
-    const double* translation = humans[robotId]->getField("translation")->getSFVec3f();
-    const double* rotation = humans[robotId]->getField("rotation")->getSFVec3f();
+    const double* translation = humans[robotId].node->getField("translation")->getSFVec3f();
+    const double* rotation = humans[robotId].node->getField("rotation")->getSFVec3f();
 
     x = translation[0];
     z = translation[1];
@@ -590,7 +549,7 @@ void SpecificWorker::OmniRobotMulti_setSpeedBase(int robotId, float advx, float 
     }
 
     double velocity[6] = {advx/1000, advz/1000, 0, 0, 0, rot};
-    humans[robotId]->setVelocity(velocity);
+    humans[robotId].node->setVelocity(velocity);
 }
 
 void SpecificWorker::OmniRobotMulti_stopBase(int robotId)
@@ -599,8 +558,8 @@ void SpecificWorker::OmniRobotMulti_stopBase(int robotId)
         return;
     }
 
-    double velocity[6] = {advx/1000, advz/1000, 0, 0, 0, rot};
-    humans[robotId]->setVelocity(velocity);
+    double velocity[6] = {0, 0, 0, 0, 0, 0};
+    humans[robotId].node->setVelocity(velocity);
 }
 
 #pragma endregion OmniRobotMulti
@@ -738,7 +697,7 @@ bool SpecificWorker::checkIfHumanExists(int robotID, string functionName){
         return false;
     }
 
-    webots::Node* human = humans[robotID];
+    webots::Node* human = humans[robotID].node;
     if(human)
         return true;
     else{
@@ -751,6 +710,61 @@ inline bool SpecificWorker::isPointOutsideCube(const Eigen::Vector3f point, cons
     return  (point.x() < box_min.x() || point.x() > box_max.x()) ||
             (point.y() < box_min.y() || point.y() > box_max.y()) ||
             (point.z() < box_min.z() || point.z() > box_max.z());
+}
+
+void SpecificWorker::initWebotsScene(){
+    // Inicialización del shadow.
+    robot = new webots::Supervisor();
+
+    // Inicializa los motores y los sensores de posición.
+    const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
+    const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
+
+    // Inicializa los sensores soportados.
+    lidar_helios = robot->getLidar("helios");
+    lidar_pearl = robot->getLidar("bpearl");
+    camera = robot->getCamera("camera");
+    range_finder = robot->getRangeFinder("range-finder");
+    camera360_1 = robot->getCamera("camera_360_1");
+    camera360_2 = robot->getCamera("camera_360_2");
+
+    // Activa los componentes en la simulación si los detecta.
+    if(lidar_helios) lidar_helios->enable(TIME_STEP);
+    if(lidar_pearl) lidar_pearl->enable(TIME_STEP);
+    if(camera) camera->enable(TIME_STEP);
+    if(range_finder) range_finder->enable(TIME_STEP);
+    if(camera360_1 && camera360_2){
+        camera360_1->enable(TIME_STEP);
+        camera360_2->enable(TIME_STEP);
+    }
+    // Activa las ruedas del robot
+    for (int i = 0; i < 4; i++) {
+        motors[i] = robot->getMotor(motorNames[i]);
+        ps[i] = motors[i]->getPositionSensor();
+        ps[i]->enable(TIME_STEP);
+        motors[i]->setPosition(INFINITY); // Modo de velocidad.
+        motors[i]->setVelocity(0);
+    }
+
+    // Inicializa los humanos en la escena
+    for (int i = 0; i < NUMBER_OF_HUMANS_IN_SCENE; i++) {
+        humans[i].node = robot->getFromDef("HUMAN_" + to_string(i));
+        if (humans[i].node == nullptr) {
+            std::cerr << "No DEF HUMAN_" + to_string(i) + " node found in the current world file" << std::endl;
+            continue;
+        }
+        if(robot->getLidar("human_lidar_" + to_string(i)) == nullptr){
+            std::cerr << "Human lidar not detected: HUMAN_" + to_string(i) + " has no lidar or has a name different from 'human_lidar_" << to_string(i) << "'." << std::endl;
+            continue;
+        }
+
+        // TODO: Inicialiar los lidar de cada humano.
+        humans[i].lidar = robot->getLidar("human_lidar_" + to_string(i));
+        humans[i].lidar->enable(TIME_STEP);
+    }
+
+    // Realiza la primera iteración de simulación.
+    robot->step(100);
 }
 
 /**************************************/
