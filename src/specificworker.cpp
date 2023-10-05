@@ -281,7 +281,7 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
             point2process.z() = distance * sin(verticalAngle);
 
             if (std::isinf(point2process.x()))
-                break;
+                continue;
             //Apply extrinsic matix to point2process
             Eigen::Vector3f lidar_point = _extrinsic_matix.linear() * point2process + _extrinsic_matix.translation();
 
