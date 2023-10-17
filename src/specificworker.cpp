@@ -117,7 +117,7 @@ void SpecificWorker::initialize(int period)
 		timer.start(Period);
 	}
 
-	robot = new webots::Robot();
+	robot = new webots::Supervisor();
 
     // Inicializa los motores y los sensores de posición.
     const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
@@ -512,7 +512,11 @@ void SpecificWorker::OmniRobot_getBasePose(int &x, int &z, float &alpha)
 
 void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state)
 {
-    printNotImplementedWarningMessage("OmniRobot_getBaseState");
+    webots::Node *robotNode = robot->getFromDef("shadow");
+
+    state.x = robotNode->getField("translation")->getSFVec3f()[0];
+    state.z = robotNode->getField("translation")->getSFVec3f()[1];
+    state.alpha = robotNode->getField("rotation")->getSFRotation()[0];
 }
 
 void SpecificWorker::OmniRobot_resetOdometer()
