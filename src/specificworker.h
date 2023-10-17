@@ -35,6 +35,8 @@
 #include <webots/RangeFinder.hpp>
 #include <webots/Motor.hpp>
 #include <webots/PositionSensor.hpp>
+#include <webots/Node.hpp>
+#include <webots/Supervisor.hpp>
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -87,7 +89,7 @@ public slots:
 private:
 	bool startup_check_flag;
 
-    webots::Robot* robot;
+    webots::Supervisor* robot;
     webots::Lidar* lidar_helios;
     webots::Lidar* lidar_pearl;
     webots::Camera* camera;
