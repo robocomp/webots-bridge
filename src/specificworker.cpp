@@ -190,6 +190,12 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     // Establecer el periodo de refresco de la imagen en milisegundos.
     newImage360.period = 33;
 
+    // Timestamp calculation
+    auto now = std::chrono::system_clock::now();
+    auto duration = now.time_since_epoch();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    newImage360.alivetime = millis;
+
     // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
     newImage360.width = 2 * _camera1->getWidth();
     newImage360.height = _camera1->getHeight();
