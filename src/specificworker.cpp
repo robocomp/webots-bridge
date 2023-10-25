@@ -250,9 +250,18 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
     double fov = _lidar->getFov();
     double verticalFov = _lidar->getVerticalFov();
 
+    // Timestamp calculation
+    auto now = std::chrono::system_clock::now();
+    auto duration = now.time_since_epoch();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+
+    // Configuration settings
     RoboCompLaser::TLaserData newLaserData;
     RoboCompLaser::LaserConfData newLaserConfData;
     RoboCompLidar3D::TData newLidar3dData;
+
+    // General Lidar values
+    newLidar3dData.timestamp = millis;
 
     newLaserConfData.maxDegrees = fov;
     newLaserConfData.maxRange = maxRange;
