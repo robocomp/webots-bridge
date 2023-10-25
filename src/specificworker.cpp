@@ -330,6 +330,12 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
     // Se establece el periodo de refresco de la imagen en milisegundos.
     newImage.period = TIME_STEP;
 
+    // Timestamp calculation
+    auto now = std::chrono::system_clock::now();
+    auto duration = now.time_since_epoch();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    newImage.alivetime = millis;
+
     // Obtener la resolución de la imagen.
     newImage.width = _camera->getWidth();
     newImage.height = _camera->getHeight();
