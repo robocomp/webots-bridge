@@ -508,6 +508,11 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::
     return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
 }
 
+RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedInImage(std::string name)
+{
+    printNotImplementedWarningMessage("Lidar3D_getLidarDataArrayProyectedInImage");
+}
+
 #pragma endregion Lidar
 
 #pragma region Camera360

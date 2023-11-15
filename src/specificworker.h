@@ -67,6 +67,7 @@ public:
 	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor);
 	RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance);
     RoboCompLidar3D::TData Lidar3D_getLidarDataProyectedInImage(std::string name){};
+	RoboCompLidar3D::TDataImage Lidar3D_getLidarDataArrayProyectedInImage(std::string name);
 
 	RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight);
 
