@@ -114,56 +114,59 @@ void SpecificWorker::initialize(int period)
 	}
 	else
 	{
+        robot = new webots::Supervisor();
+
+        // Inicializa los motores y los sensores de posición.
+        const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
+        //const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
+
+        // Inicializa los sensores soportados.
+        lidar_helios = robot->getLidar("helios");
+        lidar_pearl = robot->getLidar("bpearl");
+        //camera = robot->getCamera("camera");
+        //range_finder = robot->getRangeFinder("range-finder");
+        camera360_1 = robot->getCamera("camera_360_1");
+        camera360_2 = robot->getCamera("camera_360_2");
+
+        this->Period = 1;
+
+        // Activa los componentes en la simulación si los detecta.
+        if(lidar_helios) lidar_helios->enable(this->Period);
+        if(lidar_pearl) lidar_pearl->enable(this->Period);
+        if(camera) camera->enable(this->Period);
+        if(range_finder) range_finder->enable(this->Period);
+        if(camera360_1 && camera360_2){
+            camera360_1->enable(this->Period);
+            camera360_2->enable(this->Period);
+        }
+        for (int i = 0; i < 4; i++) {
+            motors[i] = robot->getMotor(motorNames[i]);
+            ps[i] = motors[i]->getPositionSensor();
+            ps[i]->enable(this->Period);
+            motors[i]->setPosition(INFINITY); // Modo de velocidad.
+            motors[i]->setVelocity(0);
+        }
+
 		timer.start(Period);
 	}
 
-	robot = new webots::Supervisor();
-
-    // Inicializa los motores y los sensores de posición.
-    const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
-    const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
-
-    // Inicializa los sensores soportados.
-    lidar_helios = robot->getLidar("helios");
-    lidar_pearl = robot->getLidar("bpearl");
-    camera = robot->getCamera("camera");
-    range_finder = robot->getRangeFinder("range-finder");
-    camera360_1 = robot->getCamera("camera_360_1");
-    camera360_2 = robot->getCamera("camera_360_2");
-
-    // Activa los componentes en la simulación si los detecta.
-    if(lidar_helios) lidar_helios->enable(TIME_STEP);
-    if(lidar_pearl) lidar_pearl->enable(TIME_STEP);
-    if(camera) camera->enable(TIME_STEP);
-    if(range_finder) range_finder->enable(TIME_STEP);
-    if(camera360_1 && camera360_2){
-        camera360_1->enable(TIME_STEP);
-        camera360_2->enable(TIME_STEP);
-    }
-    for (int i = 0; i < 4; i++) {
-        motors[i] = robot->getMotor(motorNames[i]);
-        ps[i] = motors[i]->getPositionSensor();
-        ps[i]->enable(TIME_STEP);
-        motors[i]->setPosition(INFINITY); // Modo de velocidad.
-        motors[i]->setVelocity(0);
-    }
-
-    // Realiza la primera iteración de simulación.
-    robot->step(100);
 }
 
 void SpecificWorker::compute()
 {
+    auto now = std::chrono::system_clock::now();
+
     // Getting the data from simulation.
     if(lidar_helios) receiving_lidarData(lidar_helios, lidar3dData_helios, extrinsic_helios);
     if(lidar_pearl) receiving_lidarData(lidar_pearl, lidar3dData_pearl, extrinsic_bpearl);
     if(camera) receiving_cameraRGBData(camera);
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
+//    robot->step(this->Period);
+    robot->step(1);
+    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 
-
-    // Setting the simulator timestep.
-    robot->step(100);
+    fps.print("FPS:");
 }
 
 int SpecificWorker::startup_check()
@@ -187,9 +190,6 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
         return;
     }
 
-    // Establecer el periodo de refresco de la imagen en milisegundos.
-    newImage360.period = 33;
-
     // Timestamp calculation
     auto now = std::chrono::system_clock::now();
     auto duration = now.time_since_epoch();
@@ -199,50 +199,32 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
     newImage360.width = 2 * _camera1->getWidth();
     newImage360.height = _camera1->getHeight();
+    // Establecer el periodo de refresco de la imagen en milisegundos.
+    newImage360.period = this->Period;
 
     const unsigned char* webotsImageData1 = _camera1->getImage();
     const unsigned char* webotsImageData2 = _camera2->getImage();
-
-    // Crear un vector para la nueva imagen RGB 360.
-    std::vector<unsigned char> rgbImage360;
-    rgbImage360.reserve(3 * newImage360.width * newImage360.height);  // Reservar espacio para RGB
-
-    unsigned char r;
-    unsigned char g;
-    unsigned char b;
-
-    // Combinamos los pixeles de ambas cámaras en la nueva imagen.
-    for (int y = 0; y < _camera1->getHeight(); y++)
-    {
-        for (int x = 0; x < _camera1->getWidth(); x++)
-        {
-            r = _camera1->imageGetRed(webotsImageData1, _camera1->getWidth(), x, y);
-            g = _camera1->imageGetGreen(webotsImageData1, _camera1->getWidth(), x, y);
-            b = _camera1->imageGetBlue(webotsImageData1, _camera1->getWidth(), x, y);
-
-            rgbImage360.push_back(b);
-            rgbImage360.push_back(g);
-            rgbImage360.push_back(r);
-        }
-
-        for (int x = 0; x < _camera2->getWidth(); x++)
-        {
-            r = _camera2->imageGetRed(webotsImageData2, _camera2->getWidth(), x, y);
-            g = _camera2->imageGetGreen(webotsImageData2, _camera2->getWidth(), x, y);
-            b = _camera2->imageGetBlue(webotsImageData2, _camera2->getWidth(), x, y);
-
-            rgbImage360.push_back(b);
-            rgbImage360.push_back(g);
-            rgbImage360.push_back(r);
-        }
-    }
+    cv::Mat img_1 = cv::Mat(cv::Size(_camera1->getWidth(), _camera1->getHeight()), CV_8UC4);
+    cv::Mat img_2 = cv::Mat(cv::Size(_camera2->getWidth(), _camera2->getHeight()), CV_8UC4);
+    img_1.data = (uchar *)webotsImageData1;
+    cv::cvtColor(img_1, img_1, cv::COLOR_RGBA2RGB);
+    img_2.data = (uchar *)webotsImageData2;
+    cv::cvtColor(img_2, img_2, cv::COLOR_RGBA2RGB);
+    cv::Mat img_final = cv::Mat(cv::Size(_camera1->getWidth()*2, _camera1->getHeight()), CV_8UC3);
+    img_1.copyTo(img_final(cv::Rect(0, 0, _camera1->getWidth(), _camera1->getHeight())));
+    img_2.copyTo(img_final(cv::Rect(_camera1->getWidth(), 0, _camera1->getWidth(), _camera2->getHeight())));
 
     // Asignar la imagen RGB 360 al tipo TImage de Robocomp
-    newImage360.image = rgbImage360;
+    newImage360.image.resize(img_final.total()*img_final.elemSize());
+    memcpy(&newImage360.image[0], img_final.data, img_final.total()*img_final.elemSize());
+
+    //newImage360.image = rgbImage360;
     newImage360.compressed = false;
 
     // Asignamos el resultado final al atributo de clase (si tienes uno).
-    this->camera360Image = newImage360;
+    double_buffer_rgb.put(std::move(newImage360));
+
+    //std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 }
 
 void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData, const Eigen::Affine3f &_extrinsic_matix){
@@ -329,12 +311,11 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D:
     laserDataConf = newLaserConfData;
     _lidar3dData = newLidar3dData;
 }
-
 void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
     RoboCompCameraRGBDSimple::TImage newImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
-    newImage.period = TIME_STEP;
+    newImage.period = this->Period;
 
     // Timestamp calculation
     auto now = std::chrono::system_clock::now();
@@ -375,12 +356,11 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
     // Asignamos el resultado final al atributo de clase
     this->cameraImage = newImage;
 }
-
 void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder){
     RoboCompCameraRGBDSimple::TDepth newDepthImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
-    newDepthImage.period = TIME_STEP;
+    newDepthImage.period = this->Period;
 
     // Obtener la resolución de la imagen de profundidad.
     newDepthImage.width = _rangeFinder->getWidth();
@@ -403,7 +383,7 @@ void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder)
         unsigned char singleElement[sizeof(float)];
         memcpy(singleElement, &scaledValue, sizeof(float));
 
-        for(int j=0; j<sizeof(float); j++){
+        for(uint j=0; j<sizeof(float); j++){
             newDepthImage.depth.emplace_back(singleElement[j]);
         }
     }
@@ -440,6 +420,7 @@ RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::
 RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std::string camera)
 {
     printNotImplementedWarningMessage("CameraRGBDSimple_getPoints");
+    return RoboCompCameraRGBDSimple::TPoints();
 }
 
 #pragma endregion CamerRGBDSimple
@@ -468,11 +449,10 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
     }
     else if(name == "bpearl")
         return filterLidarData(lidar3dData_pearl, start, len, decimationDegreeFactor);
-    else{
+    else
+    {
         cout << "Getting data from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
-
-        RoboCompLidar3D::TData emptyData;
-        return emptyData;
+        return RoboCompLidar3D::TData();
     }
 }
 
@@ -511,6 +491,7 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::
 RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedInImage(std::string name)
 {
     printNotImplementedWarningMessage("Lidar3D_getLidarDataArrayProyectedInImage");
+    return RoboCompLidar3D::TDataImage();
 }
 
 #pragma endregion Lidar
@@ -519,10 +500,11 @@ RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedIn
 
 RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight)
 {
-    return this->camera360Image;
+    return double_buffer_rgb.get_idemp();
 }
 
 #pragma endregion Camera360
+
 
 #pragma region OmniRobot
 
@@ -590,7 +572,7 @@ void SpecificWorker::OmniRobot_stopBase()
 void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data)
 {
     // Declaration of the structure to be filled
-    float advx, advz, rot;
+    float advx=0, advz=0, rot=0;
 
     /*
     // Iterate through the list of buttons in the data structure
@@ -681,12 +663,10 @@ RoboCompLidar3D::TData SpecificWorker::filterLidarData(const RoboCompLidar3D::TD
     #endif
     return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
 }
-
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
 }
-
 inline bool SpecificWorker::isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max) {
     return  (point.x() < box_min.x() || point.x() > box_max.x()) ||
             (point.y() < box_min.y() || point.y() > box_max.y()) ||

@@ -37,11 +37,15 @@
 #include <webots/PositionSensor.hpp>
 #include <webots/Node.hpp>
 #include <webots/Supervisor.hpp>
-
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
+#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <doublebuffer/DoubleBuffer.h>
+#include <fps/fps.h>
 
-#define TIME_STEP 64
+
+#define TIME_STEP 33
 // robot geometry
 #define WHEEL_RADIUS 0.08
 #define LX 0.135  // longitudinal distance from robot's COM to wheel [m].
@@ -66,7 +70,7 @@ public:
 
 	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor);
 	RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance);
-    RoboCompLidar3D::TData Lidar3D_getLidarDataProyectedInImage(std::string name){};
+    RoboCompLidar3D::TData Lidar3D_getLidarDataProyectedInImage(std::string name){ return RoboCompLidar3D::TData();};
 	RoboCompLidar3D::TDataImage Lidar3D_getLidarDataArrayProyectedInImage(std::string name);
 
 	RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight);
@@ -89,6 +93,7 @@ public slots:
 	void initialize(int period);
 private:
 	bool startup_check_flag;
+    FPSCounter fps;
 
     webots::Supervisor* robot;
     webots::Lidar* lidar_helios;
@@ -131,6 +136,9 @@ private:
 	Eigen::Vector3f box_max;
 	float floor_line;
 	inline bool isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max);
+
+    // Double buffer
+    DoubleBuffer<RoboCompCamera360RGB::TImage, RoboCompCamera360RGB::TImage> double_buffer_rgb;
 };
 
 #endif
