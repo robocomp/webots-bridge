@@ -105,7 +105,7 @@ private:
     webots::Motor *motors[4];
     webots::PositionSensor *ps[4];
 
-    void receiving_lidarData(webots::Lidar* _lidar, RoboCompLidar3D::TData &_lidar3dData, const Eigen::Affine3f &_extrinsic_matix = Eigen::Affine3f::Identity());
+    void receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, const Eigen::Affine3f &_extrinsic_matix = Eigen::Affine3f::Identity());
     void receiving_cameraRGBData(webots::Camera* _camera);
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
@@ -117,8 +117,8 @@ private:
     RoboCompLaser::LaserConfData laserDataConf;
 
     // Lidar3d
-    RoboCompLidar3D::TData lidar3dData_helios;
-    RoboCompLidar3D::TData lidar3dData_pearl;
+//    RoboCompLidar3D::TData lidar3dData_helios;
+//    RoboCompLidar3D::TData lidar3dData_pearl;
 
     // Camera RGBD simple
     RoboCompCameraRGBDSimple::TDepth depthImage;
@@ -139,6 +139,8 @@ private:
 
     // Double buffer
     DoubleBuffer<RoboCompCamera360RGB::TImage, RoboCompCamera360RGB::TImage> double_buffer_rgb;
+    DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_helios;
+    DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_pearl;
 };
 
 #endif
