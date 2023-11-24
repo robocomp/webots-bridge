@@ -154,7 +154,7 @@ void SpecificWorker::initialize(int period)
 
 void SpecificWorker::compute()
 {
-    auto now = std::chrono::system_clock::now();
+//    auto now = std::chrono::system_clock::now();
 
     // Getting the data from simulation.
     if(lidar_helios) receiving_lidarData(lidar_helios, double_buffer_helios, extrinsic_helios);
@@ -199,8 +199,12 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
     newImage360.width = 2 * _camera1->getWidth();
     newImage360.height = _camera1->getHeight();
+
     // Establecer el periodo de refresco de la imagen en milisegundos.
-    newImage360.period = this->Period;
+//    newImage360.period = this->Period;
+
+    // Establecer el periodo real del compute de refresco de la imagen en milisegundos.
+    newImage360.period = fps.get_period();
 
     const unsigned char* webotsImageData1 = _camera1->getImage();
     const unsigned char* webotsImageData2 = _camera2->getImage();
@@ -250,7 +254,7 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<Rob
 
     // General Lidar values
     newLidar3dData.timestamp = millis;
-
+    newLidar3dData.period = fps.get_period();
     newLaserConfData.maxDegrees = fov;
     newLaserConfData.maxRange = maxRange;
     newLaserConfData.minRange = minRange;
@@ -315,7 +319,8 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
     RoboCompCameraRGBDSimple::TImage newImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
-    newImage.period = this->Period;
+//    newImage.period = this->Period;
+    newImage.period = fps.get_period();
 
     // Timestamp calculation
     auto now = std::chrono::system_clock::now();
@@ -360,7 +365,7 @@ void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder)
     RoboCompCameraRGBDSimple::TDepth newDepthImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
-    newDepthImage.period = this->Period;
+    newDepthImage.period = fps.get_period();
 
     // Obtener la resolución de la imagen de profundidad.
     newDepthImage.width = _rangeFinder->getWidth();
