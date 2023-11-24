@@ -139,14 +139,16 @@ void SpecificWorker::initialize(int period)
             camera360_1->enable(this->Period);
             camera360_2->enable(this->Period);
         }
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; i++)
+        {
             motors[i] = robot->getMotor(motorNames[i]);
             ps[i] = motors[i]->getPositionSensor();
             ps[i]->enable(this->Period);
             motors[i]->setPosition(INFINITY); // Modo de velocidad.
             motors[i]->setVelocity(0);
         }
-
+        //Insert in the config?
+        this->lag = true;
 		timer.start(Period);
 	}
 
@@ -225,8 +227,11 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     //newImage360.image = rgbImage360;
     newImage360.compressed = false;
 
+    if(this->lag)
+        camera_queue.push(newImage360);
+
     // Asignamos el resultado final al atributo de clase (si tienes uno).
-    double_buffer_rgb.put(std::move(newImage360));
+    double_buffer_360.put(std::move(newImage360));
 
     //std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 }
@@ -505,7 +510,16 @@ RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedIn
 
 RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight)
 {
-    return double_buffer_rgb.get_idemp();
+    if(this->lag)
+    {
+        if(camera_queue.full())
+        {
+            std::cout << "back image" << std::endl;
+            return camera_queue.pop_back();
+        }
+    }
+
+    return double_buffer_360.get_idemp();
 }
 
 #pragma endregion Camera360

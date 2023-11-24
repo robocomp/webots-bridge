@@ -43,7 +43,7 @@
 #include <opencv2/core.hpp>
 #include <doublebuffer/DoubleBuffer.h>
 #include <fps/fps.h>
-
+#include<fixedsizedeque.h>
 
 #define TIME_STEP 33
 // robot geometry
@@ -137,8 +137,14 @@ private:
 	float floor_line;
 	inline bool isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max);
 
+    //Queue for adding lag
+    bool lag = false;
+    FixedSizeDeque<RoboCompCamera360RGB::TImage> camera_queue{20};
+
     // Double buffer
-    DoubleBuffer<RoboCompCamera360RGB::TImage, RoboCompCamera360RGB::TImage> double_buffer_rgb;
+    DoubleBuffer<RoboCompCamera360RGB::TImage, RoboCompCamera360RGB::TImage> double_buffer_360;
+
+    //Lidar3D doublebuffer
     DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_helios;
     DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_pearl;
 };
