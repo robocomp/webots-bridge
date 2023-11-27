@@ -515,7 +515,7 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
         if(camera_queue.full())
         {
             std::cout << "back image" << std::endl;
-            return camera_queue.pop_back();
+            return camera_queue.back();
         }
     }
 

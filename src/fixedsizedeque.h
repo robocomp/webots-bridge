@@ -64,7 +64,7 @@ public:
     //Returns back and delete it
     T pop_back() const
     {
-        if (this->full)
+        if (i_deque.size() == maxSize)
         {
             auto back_aux = i_deque.back();
             return back_aux;

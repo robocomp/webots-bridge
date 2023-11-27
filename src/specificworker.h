@@ -139,7 +139,7 @@ private:
 
     //Queue for adding lag
     bool lag = false;
-    FixedSizeDeque<RoboCompCamera360RGB::TImage> camera_queue{20};
+    FixedSizeDeque<RoboCompCamera360RGB::TImage> camera_queue{25};
 
     // Double buffer
     DoubleBuffer<RoboCompCamera360RGB::TImage, RoboCompCamera360RGB::TImage> double_buffer_360;
