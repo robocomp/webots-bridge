@@ -160,8 +160,8 @@ void SpecificWorker::compute()
 //    auto now = std::chrono::system_clock::now();
 
     // Getting the data from simulation.
-    if(lidar_helios) receiving_lidarData(lidar_helios, double_buffer_helios, pars.extrinsic_helios);
-    if(lidar_pearl) receiving_lidarData(lidar_pearl, double_buffer_pearl, pars.extrinsic_bpearl);
+    if(lidar_helios) receiving_lidarData(lidar_helios, double_buffer_helios,  helios_delay_queue, pars.extrinsic_helios);
+    if(lidar_pearl) receiving_lidarData(lidar_pearl, double_buffer_pearl, pearl_delay_queue, pars.extrinsic_bpearl);
     if(camera) receiving_cameraRGBData(camera);
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
@@ -183,7 +183,8 @@ int SpecificWorker::startup_check()
 
 #pragma region Data-Catching Methods
 
-void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2){
+void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2)
+{
     RoboCompCamera360RGB::TImage newImage360;
 
     // Aseguramos de que ambas cámaras tienen la misma resolución, de lo contrario, deberás manejar las diferencias.
@@ -237,7 +238,8 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     //std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 }
 
-void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, const Eigen::Affine3f &_extrinsic_matix){
+void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, const Eigen::Affine3f &_extrinsic_matix)
+{
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
     const float *rangeImage = _lidar->getRangeImage();
@@ -322,7 +324,7 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<Rob
 
     //Is it necessary to use two lidar queues? One for each lidaR?
     if(pars.delay)
-        lidar_queue.push(newLidar3dData);
+        delay_queue.push(newLidar3dData);
 
     _lidar3dData.put(std::move(newLidar3dData));
 }
@@ -461,14 +463,14 @@ RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserData()
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor)
 {
     if(name == "helios") {
-        if(pars.delay && lidar_queue.full())
-            return filterLidarData(lidar_queue.back(),start,len,decimationDegreeFactor);
+        if(pars.delay && helios_delay_queue.full())
+            return filterLidarData(helios_delay_queue.back(),start,len,decimationDegreeFactor);
         return filterLidarData(double_buffer_helios.get_idemp(), start, len, decimationDegreeFactor);
     }
     else if(name == "bpearl")
     {
-        if(pars.delay && lidar_queue.full())
-            return filterLidarData(lidar_queue.back(),start,len,decimationDegreeFactor);
+        if(pars.delay && pearl_delay_queue.full())
+            return filterLidarData(pearl_delay_queue.back(),start,len,decimationDegreeFactor);
 
         return filterLidarData(double_buffer_pearl.get_idemp(), start, len, decimationDegreeFactor);
     }
@@ -485,15 +487,15 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::
     RoboCompLidar3D::TData buffer;
     if(name == "helios")
     {
-        if(pars.delay && lidar_queue.full())
-            buffer = lidar_queue.back();
+        if(pars.delay && pearl_delay_queue.full())
+            buffer = pearl_delay_queue.back();
         else
             buffer = double_buffer_helios.get_idemp();
     }
     else if(name == "bpearl")
     {
-        if(pars.delay && lidar_queue.full())
-            buffer = lidar_queue.back();
+        if(pars.delay && helios_delay_queue.full())
+            buffer = helios_delay_queue.back();
         else
             buffer = double_buffer_pearl.get_idemp();
     }
