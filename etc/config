@@ -42,7 +42,7 @@ size_box_y=600.0
 size_box_z=1150
 
 floor_line=-20.0
-
+delay=True
 InnerModelPath = innermodel.xml
 
 Ice.Warn.Connections=0

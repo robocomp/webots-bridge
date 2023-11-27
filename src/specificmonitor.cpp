@@ -148,6 +148,8 @@ void SpecificMonitor::readConfig(RoboCompCommonBehavior::ParameterList &params )
 	configGetString( "","floor_line", aux.value, "");
 	params["floor_line"] = aux;
 
+    configGetString( "","delay", aux.value, "");
+    params["delay"] = aux;
 }
 
 //Check parameters and transform them to worker structure

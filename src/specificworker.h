@@ -130,16 +130,22 @@ private:
     // Auxiliar functions
     void printNotImplementedWarningMessage(string functionName);
 
-	//Extrinsic
-	Eigen::Affine3f extrinsic_helios, extrinsic_bpearl;
-	Eigen::Vector3f box_min;
-	Eigen::Vector3f box_max;
-	float floor_line;
 	inline bool isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max);
 
-    //Queue for adding lag
-    bool lag = false;
-    FixedSizeDeque<RoboCompCamera360RGB::TImage> camera_queue{25};
+    struct PARAMS
+    {
+        //Extrinsic
+        Eigen::Affine3f extrinsic_helios, extrinsic_bpearl;
+        Eigen::Vector3f box_min;
+        Eigen::Vector3f box_max;
+        float floor_line;
+        bool delay = false;
+    };
+    PARAMS pars;
+
+    FixedSizeDeque<RoboCompCamera360RGB::TImage> camera_queue{30};
+    //Is it necessary to use two lidar queues? One for each lidaR?
+    FixedSizeDeque<RoboCompLidar3D::TData> lidar_queue{30};
 
     // Double buffer
     DoubleBuffer<RoboCompCamera360RGB::TImage, RoboCompCamera360RGB::TImage> double_buffer_360;
