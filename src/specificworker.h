@@ -110,8 +110,6 @@ private:
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
 
-    RoboCompLidar3D::TData filterLidarData(const RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationDegreeFactor);
-
     // Laser
     RoboCompLaser::TLaserData laserData;
     RoboCompLaser::LaserConfData laserDataConf;

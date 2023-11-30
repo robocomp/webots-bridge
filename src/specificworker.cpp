@@ -435,24 +435,8 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
 
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance)
 {
-    if(name == "helios") {
-        if(pars.delay && helios_delay_queue.full())
-            return helios_delay_queue.back();
-        else
-            return double_buffer_helios.get_idemp();
-    }
-    else if(name == "bpearl")
-    {
-        if(pars.delay && pearl_delay_queue.full())
-            return pearl_delay_queue.back();
-        else 
-            return double_buffer_pearl.get_idemp();
-    }
-    else
-    {
-        cout << "Getting data from a not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
-        return RoboCompLidar3D::TData();
-    }
+    printNotImplementedWarningMessage("Lidar3D_getLidarDataArrayProyectedInImage");
+    return RoboCompLidar3D::TData();
 }
 
 RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedInImage(std::string name)
@@ -576,66 +560,6 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 
 #pragma endregion JoystickAdapter
 
-RoboCompLidar3D::TData SpecificWorker::filterLidarData(const RoboCompLidar3D::TData _lidar3dData, float _start, float _len, int _decimationDegreeFactor){
-
-    RoboCompLidar3D::TData buffer = _lidar3dData;
-// Check for nominal conditions
-    if(_len == 360  and _decimationDegreeFactor == 1)
-        return buffer;
-
-    RoboCompLidar3D::TPoints filtered_points; 
-    //Get all LiDAR
-    if (_len == 360)
-        filtered_points = std::move(buffer.points);
-    //Cut range LiDAR
-    else{
-        //Start and end angles
-        auto rad_start = _start;
-        auto rad_end = _start + _len;
-        
-        //Start Iterator, this is the end if there are surpluses, otherwise it will be modified by the defined end.
-        auto it_begin = std::find_if(buffer.points.begin(), buffer.points.end(),
-                    [_start=rad_start](const RoboCompLidar3D::TPoint& point) 
-                    {return _start < point.phi;});
-        //End Iterator
-        auto it_end = buffer.points.end();
-        //The clipping exceeds 2pi, we assign the excess to the result
-        if (rad_end > M_PI)
-            filtered_points.assign(std::make_move_iterator(buffer.points.begin()), std::make_move_iterator(std::find_if(buffer.points.begin(), buffer.points.end(),
-                        [_end=rad_end - 2*M_PI](const RoboCompLidar3D::TPoint& point) 
-                        {return _end < point.phi;})));
-        else 
-            it_end = std::find_if(it_begin, buffer.points.end(),
-                        [_end=rad_end](const RoboCompLidar3D::TPoint& point)
-                        {return _end < point.phi;});
-        //we insert the cut with 2PI limit
-        filtered_points.insert(filtered_points.end(), std::make_move_iterator(it_begin), std::make_move_iterator(it_end));
-        #if DEBUG
-            std::cout << "Time prepare lidar: " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cstart).count() << " microseconds" << std::endl<<std::flush;
-        #endif
-    }
-    //
-    if (_decimationDegreeFactor == 1)
-        return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
-    #if DEBUG   
-        cstart = std::chrono::high_resolution_clock::now();
-    #endif
-
-    //Decimal factor calculation
-    float rad_factor = qDegreesToRadians((float)_decimationDegreeFactor);
-    float tolerance = qDegreesToRadians(0.5);
-
-    //We remove the points that are of no interest 
-    filtered_points.erase(std::remove_if(filtered_points.begin(), filtered_points.end(),
-            [rad_factor, tolerance](const RoboCompLidar3D::TPoint& point) 
-            {float remainder = abs(fmod(point.phi, rad_factor));
-                return !(remainder <= tolerance || remainder >= rad_factor - tolerance);
-            }), filtered_points.end());
-    #if DEBUG
-        std::cout << "Time for cut lidar: " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cstart).count() << " microseconds" << std::endl<<std::flush;
-    #endif
-    return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
-}
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
