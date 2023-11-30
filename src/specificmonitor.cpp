@@ -88,66 +88,6 @@ void SpecificMonitor::readConfig(RoboCompCommonBehavior::ParameterList &params )
 {
 	RoboCompCommonBehavior::Parameter aux;
 	aux.editable = true;
-	//Helios Extrinsic 
-	configGetString( "","helios_rx", aux.value, "");
-	params["helios_rx"] = aux;
-
-	configGetString( "","helios_ry", aux.value, "");
-	params["helios_ry"] = aux;
-
-	configGetString( "","helios_rz", aux.value, "");
-	params["helios_rz"] = aux;
-
-	configGetString( "","helios_tx", aux.value, "");
-	params["helios_tx"] = aux;
-
-	configGetString( "","helios_ty", aux.value, "");
-	params["helios_ty"] = aux;
-
-	configGetString( "","helios_tz", aux.value, "");
-	params["helios_tz"] = aux;
-
-	//Bpearl Extrinsic
-	configGetString( "","bpearl_rx", aux.value, "");
-	params["bpearl_rx"] = aux;
-
-	configGetString( "","bpearl_ry", aux.value, "");
-	params["bpearl_ry"] = aux;
-
-	configGetString( "","bpearl_rz", aux.value, "");
-	params["bpearl_rz"] = aux;
-
-	configGetString( "","bpearl_tx", aux.value, "");
-	params["bpearl_tx"] = aux;
-
-	configGetString( "","bpearl_ty", aux.value, "");
-	params["bpearl_ty"] = aux;
-
-	configGetString( "","bpearl_tz", aux.value, "");
-	params["bpearl_tz"] = aux;
-
-	//boundin box colision / hitbox
-	configGetString( "","center_box_x", aux.value, "");
-	params["center_box_x"] = aux;
-
-	configGetString( "","center_box_y", aux.value, "");
-	params["center_box_y"] = aux;
-
-	configGetString( "","center_box_z", aux.value, "");
-	params["center_box_z"] = aux;
-
-	configGetString( "","size_box_x", aux.value, "");
-	params["size_box_x"] = aux;
-
-	configGetString( "","size_box_y", aux.value, "");
-	params["size_box_y"] = aux;
-
-	configGetString( "","size_box_z", aux.value, "");
-	params["size_box_z"] = aux;
-
-	configGetString( "","floor_line", aux.value, "");
-	params["floor_line"] = aux;
-
     configGetString( "","delay", aux.value, "");
     params["delay"] = aux;
 }

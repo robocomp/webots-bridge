@@ -52,51 +52,7 @@ bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
     std::setlocale(LC_NUMERIC,"C");
     try
     {
-        
-        //Helios extrinsic
-        float rx, ry, rz, tx, ty, tz;
-        rx = std::stof(params["helios_rx"].value);
-        ry = std::stof(params["helios_ry"].value);
-        rz = std::stof(params["helios_rz"].value);
-        tx = std::stof(params["helios_tx"].value);
-        ty = std::stof(params["helios_ty"].value);
-        tz = std::stof(params["helios_tz"].value);
-        pars.extrinsic_helios = Eigen::Translation3f(Eigen::Vector3f(tx,ty,tz));
-        pars.extrinsic_helios.rotate(Eigen::AngleAxisf (rx,Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf (ry, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rz, Eigen::Vector3f::UnitZ()));
-        std::cout<<"Helios Extrinsec Matrix:"<<std::endl<<pars.extrinsic_helios.matrix()<<endl;
-
-        rx = std::stof(params["bpearl_rx"].value);
-        ry = std::stof(params["bpearl_ry"].value);
-        rz = std::stof(params["bpearl_rz"].value);
-        tx = std::stof(params["bpearl_tx"].value);
-        ty = std::stof(params["bpearl_ty"].value);
-        tz = std::stof(params["bpearl_tz"].value);
-        pars.extrinsic_bpearl = Eigen::Translation3f(Eigen::Vector3f(tx,ty,tz));
-        pars.extrinsic_bpearl.rotate(Eigen::AngleAxisf (rx,Eigen::Vector3f::UnitX()) * Eigen::AngleAxisf (ry, Eigen::Vector3f::UnitY()) * Eigen::AngleAxisf(rz, Eigen::Vector3f::UnitZ()));
-        std::cout << "Bpearl Extrinsec Matrix:" << std::endl << pars.extrinsic_bpearl.matrix()<<endl;
-
-        //boundin box colision / hitbox
-        float center_box_x, center_box_y, center_box_z, size_box_x, size_box_y, size_box_z;
-        center_box_x = std::stof(params["center_box_x"].value);
-        center_box_y = std::stof(params["center_box_y"].value);
-        center_box_z = std::stof(params["center_box_z"].value);
-        size_box_x = std::stof(params["size_box_x"].value);
-        size_box_y = std::stof(params["size_box_y"].value);
-        size_box_z = std::stof(params["size_box_z"].value);
-
-        pars.box_min.x() = center_box_x - size_box_x/2.0;//minx
-        pars.box_min.y() = center_box_y - size_box_y/2.0;//miny
-        pars.box_min.z() = center_box_z - size_box_z/2.0;//minz
-        pars.box_max.x() = center_box_x + size_box_x/2.0;//maxx
-        pars.box_max.y() = center_box_y + size_box_y/2.0;//maxy
-        pars.box_max.z() = center_box_z + size_box_z/2.0;//maxz
-
-        pars.floor_line = std::stof(params["floor_line"].value);
         pars.delay = params.at("delay").value == "true" or (params.at("delay").value == "True");
-
-        std::cout<<"Hitbox min in millimetres:"<<std::endl<<pars.box_min<<endl;
-        std::cout<<"Hitbox max in millimetres:"<<std::endl<<pars.box_max<<endl;
-        std::cout<<"Floor line in millimetres:"<<std::endl<<pars.floor_line<<endl;
     }catch (const std::exception &e)
     {std::cout <<"Error reading the config \n" << e.what() << std::endl << std::flush; }
 
@@ -160,8 +116,8 @@ void SpecificWorker::compute()
 //    auto now = std::chrono::system_clock::now();
 
     // Getting the data from simulation.
-    if(lidar_helios) receiving_lidarData(lidar_helios, double_buffer_helios,  helios_delay_queue, pars.extrinsic_helios);
-    if(lidar_pearl) receiving_lidarData(lidar_pearl, double_buffer_pearl, pearl_delay_queue, pars.extrinsic_bpearl);
+    if(lidar_helios) receiving_lidarData(lidar_helios, double_buffer_helios,  helios_delay_queue);
+    if(lidar_pearl) receiving_lidarData(lidar_pearl, double_buffer_pearl, pearl_delay_queue);
     if(camera) receiving_cameraRGBData(camera);
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
@@ -238,7 +194,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     //std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 }
 
-void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, const Eigen::Affine3f &_extrinsic_matix)
+void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue)
 {
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
@@ -277,24 +233,19 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<Rob
             int index = j * horizontalResolution + i;
 
             //distance meters to millimeters
-            const float distance = rangeImage[index] * 1000;
+            const float distance = rangeImage[index]; //Meters
 
             //TODO rotacion del eje y con el M_PI, solucionar
             float horizontalAngle = M_PI - i * newLaserConfData.angleRes - fov / 2;
             float verticalAngle = M_PI + j * (verticalFov / verticalResolution) - verticalFov / 2;
 
             //Calculate Cartesian co-ordinates and rectify axis positions
-            Eigen::Vector3f point2process;
-            point2process.x() = -distance * sin(horizontalAngle) * cos(verticalAngle);
-            point2process.y() = distance * cos(horizontalAngle) * cos(verticalAngle);
-            point2process.z() = distance * sin(verticalAngle);
+            Eigen::Vector3f lidar_point(
+                distance * cos(horizontalAngle) * cos(verticalAngle),
+                distance * sin(horizontalAngle) * cos(verticalAngle),
+                distance * sin(verticalAngle));
 
-            if (std::isinf(point2process.x()))
-                continue;
-            //Apply extrinsic matix to point2process
-            Eigen::Vector3f lidar_point = _extrinsic_matix.linear() * point2process + _extrinsic_matix.translation();
-
-            if (isPointOutsideCube(lidar_point, pars.box_min, pars.box_max) and lidar_point.z() > pars.floor_line)
+            if (not (std::isinf(lidar_point.x()) or std::isinf(lidar_point.y()) or std::isinf(lidar_point.z())))
             {
                 RoboCompLidar3D::TPoint point;
 
@@ -303,8 +254,8 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<Rob
                 point.z = lidar_point.z();
 
                 point.r = lidar_point.norm();  // distancia radial
-                point.phi = std::atan2(lidar_point.x(), lidar_point.y());  // ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
-                point.theta = std::acos( lidar_point.z()/ point.r);  // ángulo vertical
+                point.phi = horizontalAngle;  // ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
+                point.theta = verticalAngle;  // ángulo vertical
                 point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
 
                 RoboCompLaser::TData data;
@@ -464,15 +415,16 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
 {
     if(name == "helios") {
         if(pars.delay && helios_delay_queue.full())
-            return filterLidarData(helios_delay_queue.back(),start,len,decimationDegreeFactor);
-        return filterLidarData(double_buffer_helios.get_idemp(), start, len, decimationDegreeFactor);
+            return helios_delay_queue.back();
+        else
+            return double_buffer_helios.get_idemp();
     }
     else if(name == "bpearl")
     {
         if(pars.delay && pearl_delay_queue.full())
-            return filterLidarData(pearl_delay_queue.back(),start,len,decimationDegreeFactor);
-
-        return filterLidarData(double_buffer_pearl.get_idemp(), start, len, decimationDegreeFactor);
+            return pearl_delay_queue.back();
+        else 
+            return double_buffer_pearl.get_idemp();
     }
     else
     {
@@ -483,43 +435,24 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
 
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance)
 {
-    //Get LiDAR data
-    RoboCompLidar3D::TData buffer;
-    if(name == "helios")
-    {
-        if(pars.delay && pearl_delay_queue.full())
-            buffer = pearl_delay_queue.back();
+    if(name == "helios") {
+        if(pars.delay && helios_delay_queue.full())
+            return helios_delay_queue.back();
         else
-            buffer = double_buffer_helios.get_idemp();
+            return double_buffer_helios.get_idemp();
     }
     else if(name == "bpearl")
     {
-        if(pars.delay && helios_delay_queue.full())
-            buffer = helios_delay_queue.back();
-        else
-            buffer = double_buffer_pearl.get_idemp();
+        if(pars.delay && pearl_delay_queue.full())
+            return pearl_delay_queue.back();
+        else 
+            return double_buffer_pearl.get_idemp();
     }
-    else{
-        cout << "Getting data with threshold from an not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
-        return {};
+    else
+    {
+        cout << "Getting data from a not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
+        return RoboCompLidar3D::TData();
     }
-
-    #if DEBUG
-        auto cstart = std::chrono::high_resolution_clock::now();
-    #endif
-    
-    std::ranges::sort(buffer.points, {}, &RoboCompLidar3D::TPoint::distance2d);
-    RoboCompLidar3D::TPoints filtered_points(std::make_move_iterator(buffer.points.begin()), std::make_move_iterator(
-        std::find_if(buffer.points.begin(), buffer.points.end(),
-                [_distance=distance](const RoboCompLidar3D::TPoint& point) 
-                {return _distance < point.distance2d;})));
-    std::ranges::sort(buffer.points, {}, &RoboCompLidar3D::TPoint::phi);
-    
-    #if DEBUG
-        std::cout << "Time filter lidar: " << std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - cstart).count() << " microseconds" << std::endl<<std::flush;
-    #endif
-
-    return RoboCompLidar3D::TData {filtered_points, buffer.period, buffer.timestamp};
 }
 
 RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedInImage(std::string name)
@@ -707,11 +640,7 @@ void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
 }
-inline bool SpecificWorker::isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max) {
-    return  (point.x() < box_min.x() || point.x() > box_max.x()) ||
-            (point.y() < box_min.y() || point.y() > box_max.y()) ||
-            (point.z() < box_min.z() || point.z() > box_max.z());
-}
+
 
 /**************************************/
 // From the RoboCompCamera360RGB you can use this types:

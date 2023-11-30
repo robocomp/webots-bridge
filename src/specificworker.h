@@ -105,7 +105,7 @@ private:
     webots::Motor *motors[4];
     webots::PositionSensor *ps[4];
 
-    void receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, const Eigen::Affine3f &_extrinsic_matix = Eigen::Affine3f::Identity());
+    void receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue);
     void receiving_cameraRGBData(webots::Camera* _camera);
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
@@ -130,15 +130,8 @@ private:
     // Auxiliar functions
     void printNotImplementedWarningMessage(string functionName);
 
-	inline bool isPointOutsideCube(const Eigen::Vector3f point, const Eigen::Vector3f box_min, const Eigen::Vector3f box_max);
-
     struct PARAMS
     {
-        //Extrinsic
-        Eigen::Affine3f extrinsic_helios, extrinsic_bpearl;
-        Eigen::Vector3f box_min;
-        Eigen::Vector3f box_max;
-        float floor_line;
         bool delay = false;
     };
     PARAMS pars;
