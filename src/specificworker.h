@@ -105,7 +105,7 @@ private:
     webots::Motor *motors[4];
     webots::PositionSensor *ps[4];
 
-    void receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue);
+    void receiving_lidarData(string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue);
     void receiving_cameraRGBData(webots::Camera* _camera);
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
@@ -134,10 +134,10 @@ private:
     };
     PARAMS pars;
 
-    FixedSizeDeque<RoboCompCamera360RGB::TImage> camera_queue{30};
+    FixedSizeDeque<RoboCompCamera360RGB::TImage> camera_queue{10};
     //Is it necessary to use two lidar queues? One for each lidaR?
-    FixedSizeDeque<RoboCompLidar3D::TData> pearl_delay_queue{30};
-    FixedSizeDeque<RoboCompLidar3D::TData> helios_delay_queue{30};
+    FixedSizeDeque<RoboCompLidar3D::TData> pearl_delay_queue{10};
+    FixedSizeDeque<RoboCompLidar3D::TData> helios_delay_queue{10};
 
     // Double buffer
     DoubleBuffer<RoboCompCamera360RGB::TImage, RoboCompCamera360RGB::TImage> double_buffer_360;

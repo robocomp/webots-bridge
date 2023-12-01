@@ -116,8 +116,8 @@ void SpecificWorker::compute()
 //    auto now = std::chrono::system_clock::now();
 
     // Getting the data from simulation.
-    if(lidar_helios) receiving_lidarData(lidar_helios, double_buffer_helios,  helios_delay_queue);
-    if(lidar_pearl) receiving_lidarData(lidar_pearl, double_buffer_pearl, pearl_delay_queue);
+    if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue);
+    if(lidar_pearl) receiving_lidarData("bpearl", lidar_pearl, double_buffer_pearl, pearl_delay_queue);
     if(camera) receiving_cameraRGBData(camera);
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
@@ -194,7 +194,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     //std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 }
 
-void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue)
+void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue)
 {
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
@@ -228,6 +228,7 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<Rob
 
     if(!rangeImage) { std::cout << "Lidar data empty." << std::endl; return; }
 
+
     for (int j = 0; j < verticalResolution; ++j) {
         for (int i = 0; i < horizontalResolution; ++i) {
             int index = j * horizontalResolution + i;
@@ -237,6 +238,12 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<Rob
 
             //TODO rotacion del eje y con el M_PI, solucionar
             float horizontalAngle = M_PI - i * newLaserConfData.angleRes - fov / 2;
+
+            if(name == "helios")
+            {
+                verticalFov = 2.8;
+            }
+
             float verticalAngle = M_PI + j * (verticalFov / verticalResolution) - verticalFov / 2;
 
             //Calculate Cartesian co-ordinates and rectify axis positions
@@ -247,23 +254,29 @@ void SpecificWorker::receiving_lidarData(webots::Lidar* _lidar, DoubleBuffer<Rob
 
             if (not (std::isinf(lidar_point.x()) or std::isinf(lidar_point.y()) or std::isinf(lidar_point.z())))
             {
-                RoboCompLidar3D::TPoint point;
+                if (not (name == "bpearl" and lidar_point.z() < 0) and
+                    not (name == "helios" and (verticalAngle > 4.10152 or verticalAngle <2.87979)))//down limit+, uper limit-, horizon line is PI
+//                        not (name == "helios" and (verticalAngle > 2.5307*1.5 or verticalAngle <1.309*1.5 )))
+                    //not (name == "helios" and false))
+                {
+                    RoboCompLidar3D::TPoint point;
 
-                point.x = lidar_point.x();
-                point.y = lidar_point.y();
-                point.z = lidar_point.z();
+                    point.x = lidar_point.x();
+                    point.y = lidar_point.y();
+                    point.z = lidar_point.z();
 
-                point.r = lidar_point.norm();  // distancia radial
-                point.phi = horizontalAngle;  // ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
-                point.theta = verticalAngle;  // ángulo vertical
-                point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
+                    point.r = lidar_point.norm();  // distancia radial
+                    point.phi = horizontalAngle;  // ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
+                    point.theta = verticalAngle;  // ángulo vertical
+                    point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
 
-                RoboCompLaser::TData data;
-                data.angle = point.phi;
-                data.dist = point.distance2d;
+                    RoboCompLaser::TData data;
+                    data.angle = point.phi;
+                    data.dist = point.distance2d;
 
-                newLidar3dData.points.push_back(point);
-                newLaserData.push_back(data);
+                    newLidar3dData.points.push_back(point);
+                    newLaserData.push_back(data);
+                }
             }
         }
     }
