@@ -14,8 +14,9 @@ JoystickAdapterTopic.Endpoints=tcp -p 11025
 
 # This property is used by the clients to connect to IceStorm.
 TopicManager.Proxy=IceStorm/TopicManager:default -p 9999
-delay=True
-InnerModelPath = innermodel.xml
+
+delay=True  # activate delay for the simulation
+do_joystick=False   # execute joystick commands in the simulator
 
 Ice.Warn.Connections=0
 Ice.Trace.Network=0

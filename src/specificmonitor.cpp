@@ -90,6 +90,9 @@ void SpecificMonitor::readConfig(RoboCompCommonBehavior::ParameterList &params )
 	aux.editable = true;
     configGetString( "","delay", aux.value, "");
     params["delay"] = aux;
+
+    configGetString( "","do_joystick", aux.value, "true");
+    params["do_joystick"] = aux;
 }
 
 //Check parameters and transform them to worker structure

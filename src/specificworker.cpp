@@ -53,7 +53,9 @@ bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
     try
     {
         pars.delay = params.at("delay").value == "true" or (params.at("delay").value == "True");
-    }catch (const std::exception &e)
+        pars.do_joystick = params.at("do_joystick").value == "true" or (params.at("do_joystick").value == "True");
+    }
+    catch (const std::exception &e)
     {std::cout <<"Error reading the config \n" << e.what() << std::endl << std::flush; }
 
     // Restore locale setting
@@ -542,8 +544,7 @@ void SpecificWorker::OmniRobot_stopBase()
 void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data)
 {
     // Declaration of the structure to be filled
-    float advx=0, advz=0, rot=0;
-
+    float side=0, adv=0, rot=0;
     /*
     // Iterate through the list of buttons in the data structure
     for (RoboCompJoystickAdapter::ButtonParams button : data.buttons) {
@@ -552,23 +553,20 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
     */
 
     // Iterate through the list of axes in the data structure
-    for (RoboCompJoystickAdapter::AxisParams axis : data.axes){
+    for (RoboCompJoystickAdapter::AxisParams axis : data.axes)
+    {
         // Process the axis according to its name
-        if(axis.name == "rotate") {
+        if(axis.name == "rotate")
             rot = axis.value;
-        }
-        else if (axis.name == "advance") {
-            advx = axis.value;
-        }
-        else if (axis.name == "side") {
-            advz = axis.value;
-        }
-        else {
+        else if (axis.name == "advance")
+            adv = axis.value;
+        else if (axis.name == "side")
+            side = axis.value;
+        else
             cout << "[ JoystickAdapter ] Warning: Using a non-defined axes (" << axis.name << ")." << endl;
-        }
     }
-
-    OmniRobot_setSpeedBase(advx, advz, rot);
+    if(pars.do_joystick)
+        OmniRobot_setSpeedBase(side, adv, rot);
 }
 
 #pragma endregion JoystickAdapter
@@ -577,38 +575,4 @@ void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
 }
-
-
-/**************************************/
-// From the RoboCompCamera360RGB you can use this types:
-// RoboCompCamera360RGB::TRoi
-// RoboCompCamera360RGB::TImage
-
-/**************************************/
-// From the RoboCompCameraRGBDSimple you can use this types:
-// RoboCompCameraRGBDSimple::Point3D
-// RoboCompCameraRGBDSimple::TPoints
-// RoboCompCameraRGBDSimple::TImage
-// RoboCompCameraRGBDSimple::TDepth
-// RoboCompCameraRGBDSimple::TRGBD
-
-/**************************************/
-// From the RoboCompLaser you can use this types:
-// RoboCompLaser::LaserConfData
-// RoboCompLaser::TData
-
-/**************************************/
-// From the RoboCompLidar3D you can use this types:
-// RoboCompLidar3D::TPoint
-// RoboCompLidar3D::TData
-
-/**************************************/
-// From the RoboCompOmniRobot you can use this types:
-// RoboCompOmniRobot::TMechParams
-
-/**************************************/
-// From the RoboCompJoystickAdapter you can use this types:
-// RoboCompJoystickAdapter::AxisParams
-// RoboCompJoystickAdapter::ButtonParams
-// RoboCompJoystickAdapter::TData
 

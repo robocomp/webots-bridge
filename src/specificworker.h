@@ -131,6 +131,7 @@ private:
     struct PARAMS
     {
         bool delay = false;
+        bool do_joystick = true;
     };
     PARAMS pars;
 
