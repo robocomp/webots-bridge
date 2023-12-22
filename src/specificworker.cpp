@@ -25,10 +25,10 @@
 */
 SpecificWorker::SpecificWorker(TuplePrx tprx, bool startup_check) : GenericWorker(tprx)
 {
-	this->startup_check_flag = startup_check;
-	// Uncomment if there's too many debug messages
-	// but it removes the possibility to see the messages
-	// shown in the console with qDebug()
+    this->startup_check_flag = startup_check;
+    // Uncomment if there's too many debug messages
+    // but it removes the possibility to see the messages
+    // shown in the console with qDebug()
 //	QLoggingCategory::setFilterRules("*.debug=false\n");
 }
 
@@ -37,7 +37,7 @@ SpecificWorker::SpecificWorker(TuplePrx tprx, bool startup_check) : GenericWorke
 */
 SpecificWorker::~SpecificWorker()
 {
-	std::cout << "Destroying SpecificWorker" << std::endl;
+    std::cout << "Destroying SpecificWorker" << std::endl;
 
     if(robot)
         delete robot;
@@ -60,23 +60,23 @@ bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
 
     // Restore locale setting
     std::setlocale(LC_NUMERIC,oldLocale.c_str());
-	return true;
+    return true;
 }
 
 void SpecificWorker::initialize(int period)
 {
-	std::cout << "Initialize worker" << std::endl;
-	this->Period = period;
-	if(this->startup_check_flag)
-	{
-		this->startup_check();
-	}
-	else
-	{
+    std::cout << "Initialize worker" << std::endl;
+    this->Period = period;
+    if(this->startup_check_flag)
+    {
+        this->startup_check();
+    }
+    else
+    {
         robot = new webots::Supervisor();
 
         // Inicializa los motores y los sensores de posición.
-        const char *motorNames[4] = {"wheel1", "wheel2", "wheel3", "wheel4"};
+        const char *motorNames[4] = {"wheel2", "wheel1", "wheel4", "wheel3"};
         //const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
 
         // Inicializa los sensores soportados.
@@ -108,8 +108,8 @@ void SpecificWorker::initialize(int period)
         }
 
         //Insert in the config?
-		timer.start(Period);
-	}
+        timer.start(Period);
+    }
 
 }
 
@@ -132,9 +132,9 @@ void SpecificWorker::compute()
 
 int SpecificWorker::startup_check()
 {
-	std::cout << "Startup check" << std::endl;
-	QTimer::singleShot(200, qApp, SLOT(quit()));
-	return 0;
+    std::cout << "Startup check" << std::endl;
+    QTimer::singleShot(200, qApp, SLOT(quit()));
+    return 0;
 }
 
 #pragma endregion Robocomp Methods
@@ -250,9 +250,9 @@ void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, Dou
 
             //Calculate Cartesian co-ordinates and rectify axis positions
             Eigen::Vector3f lidar_point(
-                distance * cos(horizontalAngle) * cos(verticalAngle),
-                distance * sin(horizontalAngle) * cos(verticalAngle),
-                distance * sin(verticalAngle));
+                    distance * cos(horizontalAngle) * cos(verticalAngle),
+                    distance * sin(horizontalAngle) * cos(verticalAngle),
+                    distance * sin(verticalAngle));
 
             if (not (std::isinf(lidar_point.x()) or std::isinf(lidar_point.y()) or std::isinf(lidar_point.z())))
             {
@@ -438,7 +438,7 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
     {
         if(pars.delay && pearl_delay_queue.full())
             return pearl_delay_queue.back();
-        else 
+        else
             return double_buffer_pearl.get_idemp();
     }
     else
@@ -517,10 +517,14 @@ void SpecificWorker::OmniRobot_setOdometerPose(int x, int z, float alpha)
 void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
 {
     double speeds[4];
-    speeds[0] = 1.0 / WHEEL_RADIUS * (advx + advz + (LX + LY) * rot);
-    speeds[1] = 1.0 / WHEEL_RADIUS * (advx - advz - (LX + LY) * rot);
-    speeds[2] = 1.0 / WHEEL_RADIUS * (advx - advz + (LX + LY) * rot);
-    speeds[3] = 1.0 / WHEEL_RADIUS * (advx + advz - (LX + LY) * rot);
+
+    advz *= 0.001;
+    advx *= 0.001;
+
+    speeds[0] = 1.0 / WHEEL_RADIUS * (advz + advx + (LX + LY) * rot);
+    speeds[1] = 1.0 / WHEEL_RADIUS * (advz - advx - (LX + LY) * rot);
+    speeds[2] = 1.0 / WHEEL_RADIUS * (advz - advx + (LX + LY) * rot);
+    speeds[3] = 1.0 / WHEEL_RADIUS * (advz + advx - (LX + LY) * rot);
     printf("Speeds: vx=%.2f[m/s] vy=%.2f[m/s] ω=%.2f[rad/s]\n", advx, advz, rot);
     for (int i = 0; i < 4; i++)
     {
@@ -575,4 +579,3 @@ void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
 }
-
