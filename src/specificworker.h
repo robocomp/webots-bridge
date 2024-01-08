@@ -69,7 +69,7 @@ public:
 	RoboCompLaser::TLaserData Laser_getLaserData();
 
 	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor);
-	RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance);
+	RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance, int decimationDegreeFactor);
     RoboCompLidar3D::TData Lidar3D_getLidarDataProyectedInImage(std::string name){ return RoboCompLidar3D::TData();};
 	RoboCompLidar3D::TDataImage Lidar3D_getLidarDataArrayProyectedInImage(std::string name);
 

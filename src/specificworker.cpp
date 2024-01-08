@@ -82,8 +82,8 @@ void SpecificWorker::initialize(int period)
         // Inicializa los sensores soportados.
         lidar_helios = robot->getLidar("helios");
         lidar_pearl = robot->getLidar("bpearl");
-        //camera = robot->getCamera("camera");
-        //range_finder = robot->getRangeFinder("range-finder");
+        camera = robot->getCamera("camera");
+        range_finder = robot->getRangeFinder("range-finder");
         camera360_1 = robot->getCamera("camera_360_1");
         camera360_2 = robot->getCamera("camera_360_2");
 
@@ -448,9 +448,9 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
     }
 }
 
-RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance)
+RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance, int decimationDegreeFactor)
 {
-    printNotImplementedWarningMessage("Lidar3D_getLidarDataArrayProyectedInImage");
+    printNotImplementedWarningMessage("Lidar3D_getLidarDataWithThreshold2d");
     return RoboCompLidar3D::TData();
 }
 
