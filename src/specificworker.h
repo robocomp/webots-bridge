@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2023 by YOUR NAME HERE
+ *    Copyright (C) 2024 by YOUR NAME HERE
  *
  *    This file is part of RoboComp
  *
@@ -43,7 +43,7 @@
 #include <opencv2/core.hpp>
 #include <doublebuffer/DoubleBuffer.h>
 #include <fps/fps.h>
-#include<fixedsizedeque.h>
+#include <fixedsizedeque.h>
 
 #define TIME_STEP 33
 // robot geometry
@@ -83,6 +83,9 @@ public:
 	void OmniRobot_setOdometerPose(int x, int z, float alpha);
 	void OmniRobot_setSpeedBase(float advx, float advz, float rot);
 	void OmniRobot_stopBase();
+
+	RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects);
+	void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects);
 
 	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
@@ -124,6 +127,10 @@ private:
 
     // Camera 360
     RoboCompCamera360RGB::TImage camera360Image;
+
+    // Human Tracking
+    std::map<int, webots::Node *> humanObjects;
+    void parseHumanObjects();
 
     // Auxiliar functions
     void printNotImplementedWarningMessage(string functionName);

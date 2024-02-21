@@ -127,6 +127,7 @@ void SpecificWorker::compute()
     robot->step(1);
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 
+    parseHumanObjects();
     fps.print("FPS:");
 }
 
@@ -575,7 +576,87 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 
 #pragma endregion JoystickAdapter
 
+void SpecificWorker::parseHumanObjects() {
+
+    webots::Node* crowdNode = robot->getFromDef("CROWD");
+    webots::Field* childrenField = crowdNode->getFieldByIndex(0);
+    for (int i = 0; i < childrenField->getCount(); ++i) {
+        std::string nodeDEF = childrenField->getMFNode(i)->getDef();
+        if(nodeDEF.find("HUMAN_") != std::string::npos)
+            humanObjects[i] = childrenField->getMFNode(i);
+    }
+}
+
+RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects)
+{
+    RoboCompVisualElements::TObjects objectsList;
+
+    for (const auto &entry : humanObjects) {
+        RoboCompVisualElements::TObject object;
+
+        int id = entry.first;
+        webots::Node *node = entry.second;
+        const double *position = node->getPosition();
+
+        object.id = id;
+        object.x = position[0];
+        object.y = position[1];
+
+        objectsList.objects.push_back(object);
+    }
+    
+    return objectsList;
+}
+
+void SpecificWorker::VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects)
+{
+    // Implement CODE
+}
+
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
 }
+
+
+
+/**************************************/
+// From the RoboCompCamera360RGB you can use this types:
+// RoboCompCamera360RGB::TRoi
+// RoboCompCamera360RGB::TImage
+
+/**************************************/
+// From the RoboCompCameraRGBDSimple you can use this types:
+// RoboCompCameraRGBDSimple::Point3D
+// RoboCompCameraRGBDSimple::TPoints
+// RoboCompCameraRGBDSimple::TImage
+// RoboCompCameraRGBDSimple::TDepth
+// RoboCompCameraRGBDSimple::TRGBD
+
+/**************************************/
+// From the RoboCompLaser you can use this types:
+// RoboCompLaser::LaserConfData
+// RoboCompLaser::TData
+
+/**************************************/
+// From the RoboCompLidar3D you can use this types:
+// RoboCompLidar3D::TPoint
+// RoboCompLidar3D::TDataImage
+// RoboCompLidar3D::TData
+
+/**************************************/
+// From the RoboCompOmniRobot you can use this types:
+// RoboCompOmniRobot::TMechParams
+
+/**************************************/
+// From the RoboCompVisualElements you can use this types:
+// RoboCompVisualElements::TRoi
+// RoboCompVisualElements::TObject
+// RoboCompVisualElements::TObjects
+
+/**************************************/
+// From the RoboCompJoystickAdapter you can use this types:
+// RoboCompJoystickAdapter::AxisParams
+// RoboCompJoystickAdapter::ButtonParams
+// RoboCompJoystickAdapter::TData
+
