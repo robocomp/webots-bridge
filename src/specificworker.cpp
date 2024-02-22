@@ -583,7 +583,7 @@ void SpecificWorker::parseHumanObjects() {
     for (int i = 0; i < childrenField->getCount(); ++i) {
         std::string nodeDEF = childrenField->getMFNode(i)->getDef();
         if(nodeDEF.find("HUMAN_") != std::string::npos)
-            humanObjects[i] = childrenField->getMFNode(i);
+            humanObjects[i].node = childrenField->getMFNode(i);
     }
 }
 
@@ -595,7 +595,7 @@ RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects
         RoboCompVisualElements::TObject object;
 
         int id = entry.first;
-        webots::Node *node = entry.second;
+        webots::Node *node = entry.second.node;
         const double *position = node->getPosition();
 
         object.id = id;
@@ -612,6 +612,34 @@ void SpecificWorker::VisualElements_setVisualObjects(RoboCompVisualElements::TOb
 {
     // Implement CODE
 }
+
+#pragma region Webots2Robocomp Methods
+
+void SpecificWorker::moveHumanToNextTarget(int humanId)
+{
+    if(humanObjects[humanId].path.empty())
+        return;
+
+    webots::Node *humanNode = humanObjects[humanId].node;
+    const double *position = humanNode->getPosition();
+
+    Eigen::Vector2d currentTarget {humanObjects[humanId].path.front().x - position[0], humanObjects[humanId].path.front().y - position[1] };
+    currentTarget.normalize();
+
+    double *velocity;
+
+    velocity[0] = currentTarget.x();
+    velocity[1] = currentTarget.y();
+
+    humanNode->setVelocity(velocity);
+}
+
+void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path)
+{
+    humanObjects[humanId].path = path;
+}
+
+#pragma endregion Webots2Robocomp Methods
 
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
@@ -653,6 +681,11 @@ void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 // RoboCompVisualElements::TRoi
 // RoboCompVisualElements::TObject
 // RoboCompVisualElements::TObjects
+
+/**************************************/
+// From the RoboCompWebots2Robocomp you can use this types:
+// RoboCompWebots2Robocomp::Vector3
+// RoboCompWebots2Robocomp::Quaternion
 
 /**************************************/
 // From the RoboCompJoystickAdapter you can use this types:

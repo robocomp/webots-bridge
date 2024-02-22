@@ -28,12 +28,14 @@
 #include <Camera360RGB.h>
 #include <CameraRGBDSimple.h>
 #include <GenericBase.h>
+#include <Gridder.h>
 #include <JoystickAdapter.h>
 #include <Laser.h>
 #include <Lidar3D.h>
 #include <OmniRobot.h>
 #include <Person.h>
 #include <VisualElements.h>
+#include <Webots2Robocomp.h>
 
 
 #define CHECK_PERIOD 5000
@@ -79,6 +81,7 @@ public:
 	virtual void OmniRobot_stopBase() = 0;
 	virtual RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
 	virtual void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
+	virtual void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path) = 0;
 	virtual void JoystickAdapter_sendData (RoboCompJoystickAdapter::TData data) = 0;
 
 protected:

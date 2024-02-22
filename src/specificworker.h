@@ -87,6 +87,8 @@ public:
 	RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects);
 	void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects);
 
+	void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
+
 	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
 public slots:
@@ -129,11 +131,21 @@ private:
     RoboCompCamera360RGB::TImage camera360Image;
 
     // Human Tracking
-    std::map<int, webots::Node *> humanObjects;
+    struct WebotsHuman{
+        webots::Node *node;
+        RoboCompGridder::TPath path;
+        RoboCompGridder::TPoint currentTarget;
+    };
+
+    std::map<int, WebotsHuman> humanObjects;
     void parseHumanObjects();
 
     // Auxiliar functions
     void printNotImplementedWarningMessage(string functionName);
+
+    // Webots2RoboComp interface
+    void moveHumanToNextTarget(int humanId);
+
 
     struct PARAMS
     {

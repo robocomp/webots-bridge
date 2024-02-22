@@ -87,11 +87,13 @@
 #include <lidar3dI.h>
 #include <omnirobotI.h>
 #include <visualelementsI.h>
+#include <webots2robocompI.h>
 #include <joystickadapterI.h>
 
 #include <Camera360RGB.h>
 #include <GenericBase.h>
 #include <GenericBase.h>
+#include <Gridder.h>
 #include <Person.h>
 
 
@@ -305,6 +307,24 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		}
 		catch (const IceStorm::TopicExists&){
 			cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for VisualElements\n";
+		}
+
+
+		try
+		{
+			// Server adapter creation and publication
+			if (not GenericMonitor::configGetString(communicator(), prefix, "Webots2Robocomp.Endpoints", tmp, ""))
+			{
+				cout << "[" << PROGRAM_NAME << "]: Can't read configuration for proxy Webots2Robocomp";
+			}
+			Ice::ObjectAdapterPtr adapterWebots2Robocomp = communicator()->createObjectAdapterWithEndpoints("Webots2Robocomp", tmp);
+			auto webots2robocomp = std::make_shared<Webots2RobocompI>(worker);
+			adapterWebots2Robocomp->add(webots2robocomp, Ice::stringToIdentity("webots2robocomp"));
+			adapterWebots2Robocomp->activate();
+			cout << "[" << PROGRAM_NAME << "]: Webots2Robocomp adapter created in port " << tmp << endl;
+		}
+		catch (const IceStorm::TopicExists&){
+			cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for Webots2Robocomp\n";
 		}
 
 

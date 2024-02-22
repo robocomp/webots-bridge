@@ -30,6 +30,7 @@ SET ( SOURCES
   lidar3dI.cpp
   omnirobotI.cpp
   visualelementsI.cpp
+  webots2robocompI.cpp
   joystickadapterI.cpp
 )
 
@@ -41,8 +42,8 @@ FIND_PACKAGE( Ice REQUIRED COMPONENTS Ice++11 IceStorm++11)
 
 #ROBOCOMP
 ROBOCOMP_INITIALIZE( $ENV{ROBOCOMP}/ )
-ROBOCOMP_IDSL_TO_ICE( CommonBehavior Camera360RGB Camera360RGB CameraRGBDSimple GenericBase GenericBase JoystickAdapter Laser Lidar3D OmniRobot Person VisualElements)
-ROBOCOMP_ICE_TO_SRC( CommonBehavior Camera360RGB Camera360RGB CameraRGBDSimple GenericBase GenericBase JoystickAdapter Laser Lidar3D OmniRobot Person VisualElements)
+ROBOCOMP_IDSL_TO_ICE( CommonBehavior Camera360RGB Camera360RGB CameraRGBDSimple GenericBase GenericBase Gridder JoystickAdapter Laser Lidar3D OmniRobot Person VisualElements Webots2Robocomp)
+ROBOCOMP_ICE_TO_SRC( CommonBehavior Camera360RGB Camera360RGB CameraRGBDSimple GenericBase GenericBase Gridder JoystickAdapter Laser Lidar3D OmniRobot Person VisualElements Webots2Robocomp)
 SET (EXECUTABLE_OUTPUT_PATH ${RC_COMPONENT_DEVEL_PATH}/bin)
 
 
