@@ -25,12 +25,15 @@
 #include <CommonBehavior.h>
 
 #include <Camera360RGB.h>
+#include <Camera360RGB.h>
 #include <CameraRGBDSimple.h>
 #include <GenericBase.h>
 #include <JoystickAdapter.h>
 #include <Laser.h>
 #include <Lidar3D.h>
 #include <OmniRobot.h>
+#include <Person.h>
+#include <VisualElements.h>
 
 
 #define CHECK_PERIOD 5000
@@ -74,6 +77,8 @@ public:
 	virtual void OmniRobot_setOdometerPose(int x, int z, float alpha) = 0;
 	virtual void OmniRobot_setSpeedBase(float advx, float advz, float rot) = 0;
 	virtual void OmniRobot_stopBase() = 0;
+	virtual RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
+	virtual void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
 	virtual void JoystickAdapter_sendData (RoboCompJoystickAdapter::TData data) = 0;
 
 protected:
