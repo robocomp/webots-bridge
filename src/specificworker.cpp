@@ -546,8 +546,7 @@ void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
     printf("Speeds: vx=%.2f[m/s] vy=%.2f[m/s] ω=%.2f[rad/s]\n", advx, advz, rot);
     for (int i = 0; i < 4; i++)
     {
-//        motors[i]->setVelocity(speeds[i]);
-        motors[i]->setVelocity(0.0);
+       motors[i]->setVelocity(speeds[i]);
     }
 }
 
