@@ -45,6 +45,7 @@
 #include <fps/fps.h>
 #include <fixedsizedeque.h>
 
+using namespace Eigen;
 #define TIME_STEP 33
 // robot geometry
 #define WHEEL_RADIUS 0.08
@@ -145,7 +146,7 @@ private:
 
     // Webots2RoboComp interface
     void moveHumanToNextTarget(int humanId);
-
+    void humansMovement();
 
     struct PARAMS
     {
@@ -165,6 +166,9 @@ private:
     //Lidar3D doublebuffer
     DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_helios;
     DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_pearl;
+
+    Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
+
 };
 
 #endif

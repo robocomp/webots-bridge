@@ -128,6 +128,23 @@ void SpecificWorker::compute()
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 
     parseHumanObjects();
+
+//    //TODO: DELETE, only for debuggin purpose
+//    //Create 15 equispace points Robocomp gridder path between (1000, 0) and (1000, 3000) points
+//    RoboCompGridder::TPath path;
+//    for(int i = 0; i < 15; i++)
+//    {
+//        RoboCompGridder::TPoint point;
+//        point.x = 1000;
+//        point.y = i * 200;
+//        path.push_back(point);
+//        //print point
+//        std::cout << "Point: " << point.x << " " << point.y << std::endl;
+//    }
+//    //transform path using setPathToHuman
+//    Webots2Robocomp_setPathToHuman(0, path);
+
+    humansMovement();
     fps.print("FPS:");
 }
 
@@ -529,7 +546,8 @@ void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
     printf("Speeds: vx=%.2f[m/s] vy=%.2f[m/s] ω=%.2f[rad/s]\n", advx, advz, rot);
     for (int i = 0; i < 4; i++)
     {
-        motors[i]->setVelocity(speeds[i]);
+//        motors[i]->setVelocity(speeds[i]);
+        motors[i]->setVelocity(0.0);
     }
 }
 
@@ -580,7 +598,8 @@ void SpecificWorker::parseHumanObjects() {
 
     webots::Node* crowdNode = robot->getFromDef("CROWD");
     webots::Field* childrenField = crowdNode->getFieldByIndex(0);
-    for (int i = 0; i < childrenField->getCount(); ++i) {
+    for (int i = 0; i < childrenField->getCount(); ++i)
+    {
         std::string nodeDEF = childrenField->getMFNode(i)->getDef();
         if(nodeDEF.find("HUMAN_") != std::string::npos)
             humanObjects[i].node = childrenField->getMFNode(i);
@@ -615,28 +634,108 @@ void SpecificWorker::VisualElements_setVisualObjects(RoboCompVisualElements::TOb
 
 #pragma region Webots2Robocomp Methods
 
+void SpecificWorker::humansMovement()
+{
+    qInfo()<< __FUNCTION__;
+
+    if(!humanObjects.empty())
+        for (auto& human : humanObjects)
+        {
+            qInfo() << "ID" << human.first;
+
+            qInfo() << "Moving human " << human.first << human.second.path.size();
+            moveHumanToNextTarget(human.first);
+
+        }
+}
+
 void SpecificWorker::moveHumanToNextTarget(int humanId)
 {
-    if(humanObjects[humanId].path.empty())
-        return;
-
     webots::Node *humanNode = humanObjects[humanId].node;
-    const double *position = humanNode->getPosition();
 
-    Eigen::Vector2d currentTarget {humanObjects[humanId].path.front().x - position[0], humanObjects[humanId].path.front().y - position[1] };
-    currentTarget.normalize();
+    if(humanNode == nullptr)
+    {
+        qInfo() << "Human not found";
+        return;
+    }
+        humanObjects[humanId].node->getPosition() ;
+    double velocity[3];
 
-    double *velocity;
+    if(humanObjects[humanId].path.empty())
+    {
+        qInfo() <<"Set velocity to 0, path empty";
+        velocity[0] = 0.f;
+        velocity[1] = 0.f;
+        velocity[2] = 0.f;
+    }
+    else
+    {
+        const double *position = humanNode->getPosition();
 
-    velocity[0] = currentTarget.x();
-    velocity[1] = currentTarget.y();
+        Eigen::Vector3d currentTarget {humanObjects[humanId].path.front().x - position[0], humanObjects[humanId].path.front().y - position[1] , 0};
+
+        //Erase path if .norm < d = 300mm
+        if(currentTarget.norm() < 0.3)
+            humanObjects[humanId].path.erase(humanObjects[humanId].path.begin());
+
+        //Print currentTarget vector values
+        qInfo() << "TARGET:" << currentTarget.x() << currentTarget.y() << currentTarget.z();
+
+        currentTarget.normalize();
+
+        velocity[0] = currentTarget.x();
+        velocity[1] = currentTarget.y();
+        velocity[2] = 0.f;
+        //Print velocity vector values
+        qInfo() << "SPEED:" << velocity[0] << velocity[1] << velocity[2];
+
+    }
 
     humanNode->setVelocity(velocity);
 }
 
 void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path)
 {
-    humanObjects[humanId].path = path;
+    static bool overwrite_path = false;
+
+    if(humanObjects[humanId].node == nullptr)
+    {
+        qInfo() << "Human not found";
+        return;
+    }
+
+    if(humanObjects[humanId].path.empty() and path.size() > 3)
+    {
+        webots::Node *robotNode = robot->getFromDef("shadow");
+        RoboCompGridder::TPath transformed_path;
+
+        auto x = robotNode->getField("translation")->getSFVec3f()[0] * 1000;
+        auto y = robotNode->getField("translation")->getSFVec3f()[1] * 1000;
+        auto rot = robotNode->getField("rotation")->getSFRotation();
+
+        Eigen::Vector3d axis(rot[0], rot[1], rot[2]);
+        Eigen::AngleAxisd angleAxis(rot[3], axis.normalized());
+        Eigen::Quaterniond quaternion(angleAxis);
+
+        Eigen::Vector3d eulerAngles = quaternion.toRotationMatrix().eulerAngles(0, 1, 2);
+
+//    //Get transform matrix
+
+        auto tf = create_affine_matrix(eulerAngles.x(), eulerAngles.y(), eulerAngles.z(), Eigen::Vector3d {x, y, 0});
+
+        //    //Print tf matrix values
+//    qInfo() << "Transform matrix" << tf(0,0) << tf(0,1) << tf(0,2) << tf(0,3) << tf(1,0) << tf(1,1) << tf(1,2) << tf(1,3) << tf(2,0) << tf(2,1) << tf(2,2) << tf(2,3) << tf(3,0) << tf(3,1) << tf(3,2) << tf(3,3);
+
+        for(auto &p : path)
+        {
+            Eigen::Vector2f tf_point = (tf.matrix() * Eigen::Vector4d(p.y , -p.x, 0.0, 1.0)).head(2).cast<float>();
+            transformed_path.emplace_back(RoboCompGridder::TPoint(tf_point.x() / 1000, tf_point.y() / 1000 , 100.0));
+            qInfo() << __FUNCTION__ << "point?" << tf_point.x() << tf_point.y();
+        }
+
+        humanObjects[humanId].path = transformed_path;
+    }
+
 }
 
 #pragma endregion Webots2Robocomp Methods
@@ -647,6 +746,15 @@ void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 }
 
 
+Matrix4d SpecificWorker::create_affine_matrix(double a, double b, double c, Vector3d trans)
+{
+    Transform<double, 3, Eigen::Affine> t;
+    t = Translation<double, 3>(trans);
+    t.rotate(AngleAxis<double>(a, Vector3d::UnitX()));
+    t.rotate(AngleAxis<double>(b, Vector3d::UnitY()));
+    t.rotate(AngleAxis<double>(c, Vector3d::UnitZ()));
+    return t.matrix();
+}
 
 /**************************************/
 // From the RoboCompCamera360RGB you can use this types:
