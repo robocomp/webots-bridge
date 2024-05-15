@@ -596,6 +596,18 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 void SpecificWorker::parseHumanObjects() {
 
     webots::Node* crowdNode = robot->getFromDef("CROWD");
+
+    if(!crowdNode){
+
+        static bool ErrorFlag = false;
+        if(!ErrorFlag){
+            qInfo() << "CROWD Node not found.";
+            ErrorFlag = true;
+        }
+    
+        return;    
+    }
+
     webots::Field* childrenField = crowdNode->getFieldByIndex(0);
     for (int i = 0; i < childrenField->getCount(); ++i)
     {
