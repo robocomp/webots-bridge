@@ -20,6 +20,7 @@ SET ( SOURCES
   $ENV{ROBOCOMP}/classes/rapplication/rapplication.cpp
   $ENV{ROBOCOMP}/classes/sigwatch/sigwatch.cpp
   $ENV{ROBOCOMP}/classes/qlog/qlog.cpp
+  $ENV{ROBOCOMP}/classes/grafcetStep/GRAFCETStep.cpp
   main.cpp
   genericmonitor.cpp
   commonbehaviorI.cpp
@@ -33,7 +34,6 @@ SET ( SOURCES
   webots2robocompI.cpp
   joystickadapterI.cpp
 )
-
 
 
 ADD_DEFINITIONS ("-DICE_CPP11_MAPPING")
@@ -52,7 +52,7 @@ add_definitions(-fmax-errors=1 -fno-char8_t)
 
 # Specify construction and link process
 ADD_EXECUTABLE( Webots2Robocomp ${SOURCES} ${MOC_SOURCES} ${RC_SOURCES} ${UI_HEADERS} )
-TARGET_LINK_LIBRARIES( Webots2Robocomp ${LIBS} ${STATIC_LIBS} ${SPECIFIC_LIBS} ${QT_LIBRARIES} ${Ice_LIBRARIES})
+TARGET_LINK_LIBRARIES( Webots2Robocomp ${LIBS} ${STATIC_LIBS} ${SPECIFIC_LIBS} ${QT_LIBRARIES} ${Ice_LIBRARIES} )
 SET_TARGET_PROPERTIES(Webots2Robocomp
         PROPERTIES
         CXX_STANDARD 20

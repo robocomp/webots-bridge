@@ -27,6 +27,7 @@
 #ifndef SPECIFICWORKER_H
 #define SPECIFICWORKER_H
 #define DEBUG 0
+#define HIBERNATION_ENABLED
 
 #include <genericworker.h>
 #include <webots/Robot.hpp>
@@ -89,14 +90,18 @@ public:
 	void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects);
 
 	void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
+	void Webots2Robocomp_resetWebots();
 
 	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
 public slots:
+    void initialize();
 	void compute();
+    void emergency();
+    void restore();
 	int startup_check();
 
-	void initialize(int period);
+
 private:
 	bool startup_check_flag;
     FPSCounter fps;

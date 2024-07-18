@@ -70,7 +70,7 @@ public:
 
 signals:
 	void kill();
-	void initializeWorker(int);
+	void initializeWorker();
 };
 
 #endif // GENERICMONITOR_H

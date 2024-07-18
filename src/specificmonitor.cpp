@@ -62,7 +62,7 @@ void SpecificMonitor::initialize()
 		killYourSelf();
 	}
 	state = RoboCompCommonBehavior::State::Running;
-	emit initializeWorker(period);
+	emit initializeWorker();
 }
 
 bool SpecificMonitor::sendParamsToWorker(RoboCompCommonBehavior::ParameterList params)

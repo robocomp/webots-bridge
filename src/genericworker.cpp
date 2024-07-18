@@ -23,11 +23,26 @@
 GenericWorker::GenericWorker(TuplePrx tprx) : QObject()
 {
 
+	
 
-	mutex = new QMutex();
+	states.resize(STATES::NumberOfStates);
+	states[STATES::Initialize] = new GRAFCETStep("Initialize", BASIC_PERIOD, nullptr, std::bind(&GenericWorker::initialize, this));
+	states[STATES::Compute] = new GRAFCETStep("Compute", BASIC_PERIOD, std::bind(&GenericWorker::compute, this));
+	states[STATES::Emergency] = new GRAFCETStep("Emergency", BASIC_PERIOD, std::bind(&GenericWorker::emergency, this));
+	states[STATES::Restore] = new GRAFCETStep("Restore", BASIC_PERIOD, nullptr, std::bind(&GenericWorker::restore, this));
 
-	Period = BASIC_PERIOD;
-	connect(&timer, SIGNAL(timeout()), this, SLOT(compute()));
+	states[STATES::Initialize]->addTransition(states[STATES::Initialize], SIGNAL(entered()), states[STATES::Compute]);
+	states[STATES::Compute]->addTransition(this, SIGNAL(goToEmergency()), states[STATES::Emergency]);
+	states[STATES::Emergency]->addTransition(this, SIGNAL(goToRestore()), states[STATES::Restore]);
+	states[STATES::Restore]->addTransition(states[STATES::Restore], SIGNAL(entered()), states[STATES::Compute]);
+
+	statemachine.addState(states[STATES::Initialize]);
+	statemachine.addState(states[STATES::Compute]);
+	statemachine.addState(states[STATES::Emergency]);
+	statemachine.addState(states[STATES::Restore]);
+
+	statemachine.setChildMode(QState::ExclusiveStates);;
+	statemachine.setInitialState(states[STATES::Initialize]);
 
 }
 
@@ -36,6 +51,9 @@ GenericWorker::GenericWorker(TuplePrx tprx) : QObject()
 */
 GenericWorker::~GenericWorker()
 {
+	for (auto state : states) {
+        delete state;
+    }
 
 }
 void GenericWorker::killYourSelf()
@@ -43,13 +61,88 @@ void GenericWorker::killYourSelf()
 	rDebug("Killing myself");
 	emit kill();
 }
+
+void GenericWorker::initializeWorker()
+{
+	statemachine.start();
+
+	connect(&hibernationChecker, SIGNAL(timeout()), this, SLOT(hibernationCheck()));
+
+	auto error = statemachine.errorString();
+    if (error.length() > 0){
+        qWarning() << error;
+        throw error;
+    }
+
+}
+
 /**
 * \brief Change compute period
+* @param nameState name state "Compute" or "Emergency"
 * @param per Period in ms
 */
-void GenericWorker::setPeriod(int p)
+void GenericWorker::setPeriod(STATES state, int p)
 {
-	rDebug("Period changed"+QString::number(p));
-	Period = p;
-	timer.start(Period);
+	switch (state)
+	{
+	case STATES::Compute:
+		this->period = p;
+		states[STATES::Compute]->setPeriod(this->period);
+		std::cout << "Period Compute changed " << p  << "ms" << std::endl<< std::flush;
+		break;
+
+	case STATES::Emergency:
+		states[STATES::Emergency]->setPeriod(this->period);
+		std::cout << "Period Emergency changed " << p << "ms" << std::endl<< std::flush;
+		break;
+	
+	default:
+		std::cerr<<"No change in the period, the state parameter must be 'Compute' or 'Emergency'."<< std::endl<< std::flush;
+		break;
+	}
 }
+
+int GenericWorker::getPeriod(STATES state)
+{
+	if (state < 0 || state >= STATES::NumberOfStates) {
+        std::cerr << "Invalid state parameter." << std::endl << std::flush;
+        return -1;
+    }
+	return states[state]->getPeriod();
+}
+
+void GenericWorker::hibernationCheck()
+{
+	//Time between activity to activate hibernation
+    static const int HIBERNATION_TIMEOUT = 5000;
+
+    static std::chrono::high_resolution_clock::time_point lastWakeTime = std::chrono::high_resolution_clock::now();
+	static int originalPeriod = this->period;
+    static bool isInHibernation = false;
+
+	// Update lastWakeTime by calling a function
+    if (hibernation)
+    {
+        hibernation = false;
+        lastWakeTime = std::chrono::high_resolution_clock::now();
+
+		// Restore period
+        if (isInHibernation)
+        {
+            this->setPeriod(STATES::Compute, originalPeriod);
+            isInHibernation = false;
+        }
+    }
+
+    auto now = std::chrono::high_resolution_clock::now();
+    auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWakeTime);
+
+	//HIBERNATION_TIMEOUT exceeded, change period
+    if (elapsedTime.count() > HIBERNATION_TIMEOUT && !isInHibernation)
+    {
+        isInHibernation = true;
+		originalPeriod = this->getPeriod(STATES::Compute);
+        this->setPeriod(STATES::Compute, 500);
+    }
+}
+

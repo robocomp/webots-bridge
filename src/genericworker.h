@@ -23,6 +23,11 @@
 #include <stdint.h>
 #include <qlog/qlog.h>
 #include <CommonBehavior.h>
+#include <grafcetStep/GRAFCETStep.h>
+#include <QStateMachine>
+#include <QEvent>
+#include <QString>
+#include <functional>
 
 #include <Camera360RGB.h>
 #include <Camera360RGB.h>
@@ -52,10 +57,15 @@ public:
 	GenericWorker(TuplePrx tprx);
 	virtual ~GenericWorker();
 	virtual void killYourSelf();
-	virtual void setPeriod(int p);
-
 	virtual bool setParams(RoboCompCommonBehavior::ParameterList params) = 0;
-	QMutex *mutex;
+
+	enum STATES { Initialize, Compute, Emergency, Restore, NumberOfStates };
+	void setPeriod(STATES state, int p);
+	int getPeriod(STATES state);
+
+	QStateMachine statemachine;
+	QTimer hibernationChecker;
+	atomic_bool hibernation = false;
 
 
 
@@ -81,23 +91,31 @@ public:
 	virtual void OmniRobot_stopBase() = 0;
 	virtual RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
 	virtual void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
+	virtual void Webots2Robocomp_resetWebots() = 0;
 	virtual void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path) = 0;
 	virtual void JoystickAdapter_sendData (RoboCompJoystickAdapter::TData data) = 0;
 
 protected:
 
-	QTimer timer;
-	int Period;
 
 private:
-
+	int period = BASIC_PERIOD;
+	std::vector<GRAFCETStep*> states;
 
 public slots:
+	virtual void initialize() = 0;
 	virtual void compute() = 0;
-	virtual void initialize(int period) = 0;
+	virtual void emergency() = 0;
+	virtual void restore() = 0;
+
+	void initializeWorker();
+	void hibernationCheck();
+
 	
 signals:
 	void kill();
+	void goToEmergency();
+	void goToRestore();
 };
 
 #endif

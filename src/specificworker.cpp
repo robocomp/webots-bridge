@@ -63,10 +63,10 @@ bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
     return true;
 }
 
-void SpecificWorker::initialize(int period)
+void SpecificWorker::initialize()
 {
     std::cout << "Initialize worker" << std::endl;
-    this->Period = period;
+    this->setPeriod(Compute ,TIME_STEP);
     if(this->startup_check_flag)
     {
         this->startup_check();
@@ -87,28 +87,26 @@ void SpecificWorker::initialize(int period)
         camera360_1 = robot->getCamera("camera_360_1");
         camera360_2 = robot->getCamera("camera_360_2");
 
-        this->Period = 1;
+        this->setPeriod(Compute, 1);
 
         // Activa los componentes en la simulación si los detecta.
-        if(lidar_helios) lidar_helios->enable(this->Period);
-        if(lidar_pearl) lidar_pearl->enable(this->Period);
-        if(camera) camera->enable(this->Period);
-        if(range_finder) range_finder->enable(this->Period);
+        if(lidar_helios) lidar_helios->enable(this->getPeriod(Compute));
+        if(lidar_pearl) lidar_pearl->enable(this->getPeriod(Compute));
+        if(camera) camera->enable(this->getPeriod(Compute));
+        if(range_finder) range_finder->enable(this->getPeriod(Compute));
         if(camera360_1 && camera360_2){
-            camera360_1->enable(this->Period);
-            camera360_2->enable(this->Period);
+            camera360_1->enable(this->getPeriod(Compute));
+            camera360_2->enable(this->getPeriod(Compute));
         }
         for (int i = 0; i < 4; i++)
         {
             motors[i] = robot->getMotor(motorNames[i]);
             ps[i] = motors[i]->getPositionSensor();
-            ps[i]->enable(this->Period);
+            ps[i]->enable(this->getPeriod(Compute));
             motors[i]->setPosition(INFINITY); // Modo de velocidad.
             motors[i]->setVelocity(0);
         }
 
-        //Insert in the config?
-        timer.start(Period);
     }
 
 }
@@ -155,12 +153,35 @@ int SpecificWorker::startup_check()
     return 0;
 }
 
+void SpecificWorker::emergency()
+{
+    std::cout << "Emergency worker" << std::endl;
+    //computeCODE
+    //
+    //if (SUCCESSFUL)
+    //  emmit goToRestore()
+}
+
+//Execute one when exiting to emergencyState
+void SpecificWorker::restore()
+{
+    std::cout << "Restore worker" << std::endl;
+    //computeCODE
+    //Restore emergency component
+
+}
+
 #pragma endregion Robocomp Methods
 
 #pragma region Data-Catching Methods
 
 void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2)
 {
+
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     RoboCompCamera360RGB::TImage newImage360;
 
     // Aseguramos de que ambas cámaras tienen la misma resolución, de lo contrario, deberás manejar las diferencias.
@@ -216,6 +237,10 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
 
 void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
     const float *rangeImage = _lidar->getRangeImage();
@@ -313,6 +338,11 @@ void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, Dou
     _lidar3dData.put(std::move(newLidar3dData));
 }
 void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
+
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     RoboCompCameraRGBDSimple::TImage newImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
@@ -359,6 +389,10 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
     this->cameraImage = newImage;
 }
 void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder){
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     RoboCompCameraRGBDSimple::TDepth newDepthImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
@@ -400,6 +434,10 @@ void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder)
 
 RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::string camera)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     RoboCompCameraRGBDSimple::TRGBD newRGBD;
 
     newRGBD.image = this->cameraImage;
@@ -411,16 +449,28 @@ RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::str
 
 RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::string camera)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     return this->depthImage;
 }
 
 RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::string camera)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     return this->cameraImage;
 }
 
 RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std::string camera)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     printNotImplementedWarningMessage("CameraRGBDSimple_getPoints");
     return RoboCompCameraRGBDSimple::TPoints();
 }
@@ -431,21 +481,37 @@ RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std
 
 RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     return laserData;
 }
 
 RoboCompLaser::LaserConfData SpecificWorker::Laser_getLaserConfData()
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     return laserDataConf;
 }
 
 RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserData()
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     return laserData;
 }
 
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     if(name == "helios") {
         if(pars.delay && helios_delay_queue.full())
             return helios_delay_queue.back();
@@ -468,12 +534,20 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
 
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance, int decimationDegreeFactor)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     printNotImplementedWarningMessage("Lidar3D_getLidarDataWithThreshold2d");
     return RoboCompLidar3D::TData();
 }
 
 RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedInImage(std::string name)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     printNotImplementedWarningMessage("Lidar3D_getLidarDataArrayProyectedInImage");
     return RoboCompLidar3D::TDataImage();
 }
@@ -484,6 +558,10 @@ RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedIn
 
 RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     if(pars.delay)
     {
         if(camera_queue.full())
@@ -500,16 +578,28 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
 
 void SpecificWorker::OmniRobot_correctOdometer(int x, int z, float alpha)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     printNotImplementedWarningMessage("OmniRobot_correctOdometer");
 }
 
 void SpecificWorker::OmniRobot_getBasePose(int &x, int &z, float &alpha)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     printNotImplementedWarningMessage("OmniRobot_getBasePose");
 }
 
 void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     webots::Node *robotNode = robot->getFromDef("shadow");
 
     state.x = robotNode->getField("translation")->getSFVec3f()[0];
@@ -519,21 +609,37 @@ void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &sta
 
 void SpecificWorker::OmniRobot_resetOdometer()
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     printNotImplementedWarningMessage("OmniRobot_resetOdometer");
 }
 
 void SpecificWorker::OmniRobot_setOdometer(RoboCompGenericBase::TBaseState state)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     printNotImplementedWarningMessage("OmniRobot_setOdometer");
 }
 
 void SpecificWorker::OmniRobot_setOdometerPose(int x, int z, float alpha)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     printNotImplementedWarningMessage("OmniRobot_setOdometerPose");
 }
 
 void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     double speeds[4];
 
     advz *= 0.001;
@@ -552,6 +658,10 @@ void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
 
 void SpecificWorker::OmniRobot_stopBase()
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     for (int i = 0; i < 4; i++)
     {
         motors[i]->setVelocity(0);
@@ -565,6 +675,10 @@ void SpecificWorker::OmniRobot_stopBase()
 //SUBSCRIPTION to sendData method from JoystickAdapter interface
 void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     // Declaration of the structure to be filled
     float side=0, adv=0, rot=0;
     /*
@@ -594,6 +708,9 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 #pragma endregion JoystickAdapter
 
 void SpecificWorker::parseHumanObjects() {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
 
     webots::Node* crowdNode = robot->getFromDef("CROWD");
 
@@ -619,6 +736,10 @@ void SpecificWorker::parseHumanObjects() {
 
 RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     RoboCompVisualElements::TObjects objectsList;
 
     for (const auto &entry : humanObjects) {
@@ -640,6 +761,10 @@ RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects
 
 void SpecificWorker::VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     // Implement CODE
 }
 
@@ -647,6 +772,10 @@ void SpecificWorker::VisualElements_setVisualObjects(RoboCompVisualElements::TOb
 
 void SpecificWorker::humansMovement()
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     qInfo()<< __FUNCTION__;
 
     if(!humanObjects.empty())
@@ -662,6 +791,10 @@ void SpecificWorker::humansMovement()
 
 void SpecificWorker::moveHumanToNextTarget(int humanId)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     webots::Node *humanNode = humanObjects[humanId].node;
 
     if(humanNode == nullptr)
@@ -707,6 +840,10 @@ void SpecificWorker::moveHumanToNextTarget(int humanId)
 
 void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     static bool overwrite_path = false;
 
     if(humanObjects[humanId].node == nullptr)
@@ -749,16 +886,34 @@ void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder
 
 }
 
+void SpecificWorker::Webots2Robocomp_resetWebots()
+{
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
+//implementCODE
+
+}
+
 #pragma endregion Webots2Robocomp Methods
 
 void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
 }
 
 
 Matrix4d SpecificWorker::create_affine_matrix(double a, double b, double c, Vector3d trans)
 {
+#ifdef HIBERNATION_ENABLED
+    hibernation = true;
+#endif
+
     Transform<double, 3, Eigen::Affine> t;
     t = Translation<double, 3>(trans);
     t.rotate(AngleAxis<double>(a, Vector3d::UnitX()));
