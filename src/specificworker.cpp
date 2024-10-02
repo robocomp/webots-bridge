@@ -675,6 +675,8 @@ void SpecificWorker::OmniRobot_stopBase()
 //SUBSCRIPTION to sendData method from JoystickAdapter interface
 void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data)
 {
+    qDebug() << "me llega";
+
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
@@ -776,7 +778,7 @@ void SpecificWorker::humansMovement()
     hibernation = true;
 #endif
 
-    qInfo()<< __FUNCTION__;
+    //qInfo()<< __FUNCTION__;
 
     if(!humanObjects.empty())
         for (auto& human : humanObjects)

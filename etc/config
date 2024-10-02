@@ -18,7 +18,7 @@ JoystickAdapterTopic.Endpoints=tcp -p 11025
 TopicManager.Proxy=IceStorm/TopicManager:default -p 9999
 
 delay=True  # activate delay for the simulation
-do_joystick=False   # execute joystick commands in the simulator
+do_joystick=True   # execute joystick commands in the simulator
 
 Ice.Warn.Connections=0
 Ice.Trace.Network=0
