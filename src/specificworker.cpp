@@ -107,6 +107,7 @@ void SpecificWorker::initialize()
             motors[i]->setVelocity(0);
         }
 
+
     }
 
 }
@@ -122,6 +123,8 @@ void SpecificWorker::compute()
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
 //    robot->step(this->Period);
+
+
     robot->step(1);
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 
@@ -604,7 +607,7 @@ void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &sta
 
     state.x = robotNode->getField("translation")->getSFVec3f()[0];
     state.z = robotNode->getField("translation")->getSFVec3f()[1];
-    state.alpha = robotNode->getField("rotation")->getSFRotation()[0];
+    state.alpha = robotNode->getField("rotation")->getSFRotation()[2];
 }
 
 void SpecificWorker::OmniRobot_resetOdometer()
