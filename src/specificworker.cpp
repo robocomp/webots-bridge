@@ -607,7 +607,7 @@ void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &sta
 
     state.x = robotNode->getField("translation")->getSFVec3f()[0];
     state.z = robotNode->getField("translation")->getSFVec3f()[1];
-    state.alpha = robotNode->getField("rotation")->getSFRotation()[2];
+    state.alpha = robotNode->getField("rotation")->getSFRotation()[3];
 }
 
 void SpecificWorker::OmniRobot_resetOdometer()
