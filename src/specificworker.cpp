@@ -31,7 +31,6 @@ SpecificWorker::SpecificWorker(TuplePrx tprx, bool startup_check) : GenericWorke
     // shown in the console with qDebug()
 //	QLoggingCategory::setFilterRules("*.debug=false\n");
 }
-
 /**
 * \brief Default destructor
 */
@@ -42,7 +41,6 @@ SpecificWorker::~SpecificWorker()
     if(robot)
         delete robot;
 }
-
 bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
 {
     // Save locale setting
@@ -62,7 +60,6 @@ bool SpecificWorker::setParams(RoboCompCommonBehavior::ParameterList params)
     std::setlocale(LC_NUMERIC,oldLocale.c_str());
     return true;
 }
-
 void SpecificWorker::initialize()
 {
     std::cout << "Initialize worker" << std::endl;
@@ -73,6 +70,9 @@ void SpecificWorker::initialize()
     }
     else
     {
+        // pause variable
+        last_read.store(std::chrono::high_resolution_clock::now());
+
         robot = new webots::Supervisor();
 
         // Inicializa los motores y los sensores de posición.
@@ -86,8 +86,6 @@ void SpecificWorker::initialize()
         range_finder = robot->getRangeFinder("range-finder");
         camera360_1 = robot->getCamera("camera_360_1");
         camera360_2 = robot->getCamera("camera_360_2");
-
-        this->setPeriod(Compute, 1);
 
         // Activa los componentes en la simulación si los detecta.
         if(lidar_helios) lidar_helios->enable(this->getPeriod(Compute));
@@ -107,14 +105,18 @@ void SpecificWorker::initialize()
             motors[i]->setVelocity(0);
         }
 
-
+        this->setPeriod(Compute, 10);
     }
 
 }
-
 void SpecificWorker::compute()
 {
-//    auto now = std::chrono::system_clock::now();
+    /// check idle time
+    if(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - last_read.load()).count() > MAX_INACTIVE_TIME)
+    {
+        fps.print("No requests in the last 5 seconds. Pausing. Comp wil continue in next call", 3000);
+        return;
+    }
 
     // Getting the data from simulation.
     if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue);
@@ -123,7 +125,6 @@ void SpecificWorker::compute()
     if(range_finder) receiving_depthImageData(range_finder);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
 //    robot->step(this->Period);
-
 
     robot->step(1);
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
@@ -155,7 +156,6 @@ int SpecificWorker::startup_check()
     QTimer::singleShot(200, qApp, SLOT(quit()));
     return 0;
 }
-
 void SpecificWorker::emergency()
 {
     std::cout << "Emergency worker" << std::endl;
@@ -164,7 +164,6 @@ void SpecificWorker::emergency()
     //if (SUCCESSFUL)
     //  emmit goToRestore()
 }
-
 //Execute one when exiting to emergencyState
 void SpecificWorker::restore()
 {
@@ -345,7 +344,6 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
     RoboCompCameraRGBDSimple::TImage newImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
@@ -441,6 +439,7 @@ RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::str
     hibernation = true;
 #endif
 
+    last_read.store(std::chrono::high_resolution_clock::now());
     RoboCompCameraRGBDSimple::TRGBD newRGBD;
 
     newRGBD.image = this->cameraImage;
@@ -455,7 +454,7 @@ RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     return this->depthImage;
 }
 
@@ -464,7 +463,7 @@ RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     return this->cameraImage;
 }
 
@@ -473,7 +472,7 @@ RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("CameraRGBDSimple_getPoints");
     return RoboCompCameraRGBDSimple::TPoints();
 }
@@ -487,7 +486,7 @@ RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserAndBStateData(RoboCompGe
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     return laserData;
 }
 
@@ -496,7 +495,7 @@ RoboCompLaser::LaserConfData SpecificWorker::Laser_getLaserConfData()
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     return laserDataConf;
 }
 
@@ -505,7 +504,7 @@ RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserData()
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     return laserData;
 }
 
@@ -514,7 +513,7 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     if(name == "helios") {
         if(pars.delay && helios_delay_queue.full())
             return helios_delay_queue.back();
@@ -540,7 +539,7 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("Lidar3D_getLidarDataWithThreshold2d");
     return RoboCompLidar3D::TData();
 }
@@ -550,7 +549,7 @@ RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedIn
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("Lidar3D_getLidarDataArrayProyectedInImage");
     return RoboCompLidar3D::TDataImage();
 }
@@ -564,7 +563,7 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     if(pars.delay)
     {
         if(camera_queue.full())
@@ -576,7 +575,6 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
 
 #pragma endregion Camera360
 
-
 #pragma region OmniRobot
 
 void SpecificWorker::OmniRobot_correctOdometer(int x, int z, float alpha)
@@ -584,7 +582,7 @@ void SpecificWorker::OmniRobot_correctOdometer(int x, int z, float alpha)
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_correctOdometer");
 }
 
@@ -593,7 +591,7 @@ void SpecificWorker::OmniRobot_getBasePose(int &x, int &z, float &alpha)
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_getBasePose");
 }
 
@@ -602,7 +600,7 @@ void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &sta
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     webots::Node *robotNode = robot->getFromDef("shadow");
 
     state.x = robotNode->getField("translation")->getSFVec3f()[0];
@@ -615,7 +613,7 @@ void SpecificWorker::OmniRobot_resetOdometer()
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_resetOdometer");
 }
 
@@ -624,7 +622,7 @@ void SpecificWorker::OmniRobot_setOdometer(RoboCompGenericBase::TBaseState state
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_setOdometer");
 }
 
@@ -633,7 +631,7 @@ void SpecificWorker::OmniRobot_setOdometerPose(int x, int z, float alpha)
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_setOdometerPose");
 }
 
@@ -642,7 +640,7 @@ void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     double speeds[4];
 
     advz *= 0.001;
@@ -664,7 +662,7 @@ void SpecificWorker::OmniRobot_stopBase()
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     for (int i = 0; i < 4; i++)
     {
         motors[i]->setVelocity(0);
@@ -716,9 +714,7 @@ void SpecificWorker::parseHumanObjects() {
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
     webots::Node* crowdNode = robot->getFromDef("CROWD");
-
     if(!crowdNode){
 
         static bool ErrorFlag = false;
@@ -738,13 +734,12 @@ void SpecificWorker::parseHumanObjects() {
             humanObjects[i].node = childrenField->getMFNode(i);
     }
 }
-
 RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects)
 {
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     RoboCompVisualElements::TObjects objectsList;
 
     for (const auto &entry : humanObjects) {
@@ -763,13 +758,12 @@ RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects
     
     return objectsList;
 }
-
 void SpecificWorker::VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects)
 {
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
+    last_read.store(std::chrono::high_resolution_clock::now());
     // Implement CODE
 }
 
@@ -780,8 +774,6 @@ void SpecificWorker::humansMovement()
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-
-    //qInfo()<< __FUNCTION__;
 
     if(!humanObjects.empty())
         for (auto& human : humanObjects)
@@ -849,7 +841,7 @@ void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder
     hibernation = true;
 #endif
 
-    static bool overwrite_path = false;
+    //static bool overwrite_path = false;
 
     if(humanObjects[humanId].node == nullptr)
     {
@@ -911,8 +903,6 @@ void SpecificWorker::printNotImplementedWarningMessage(string functionName)
 
     cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
 }
-
-
 Matrix4d SpecificWorker::create_affine_matrix(double a, double b, double c, Vector3d trans)
 {
 #ifdef HIBERNATION_ENABLED
