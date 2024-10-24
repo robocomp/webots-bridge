@@ -145,7 +145,7 @@ void SpecificWorker::compute()
 //    //transform path using setPathToHuman
 //    Webots2Robocomp_setPathToHuman(0, path);
 
-    humansMovement();
+    //humansMovement();
     fps.print("FPS:");
 }
 
