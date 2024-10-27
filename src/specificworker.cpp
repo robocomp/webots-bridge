@@ -111,12 +111,6 @@ void SpecificWorker::initialize()
 }
 void SpecificWorker::compute()
 {
-    /// check idle time
-    if(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - last_read.load()).count() > MAX_INACTIVE_TIME)
-    {
-        fps.print("No requests in the last 5 seconds. Pausing. Comp wil continue in next call", 3000);
-        return;
-    }
 
     // Getting the data from simulation.
     if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue);
