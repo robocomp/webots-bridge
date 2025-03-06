@@ -857,8 +857,6 @@ void SpecificWorker::Webots2Robocomp_resetWebots()
 //SUBSCRIPTION to sendData method from JoystickAdapter interface
 void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data)
 {
-    qDebug() << "me llega";
-
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
