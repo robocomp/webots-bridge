@@ -53,7 +53,7 @@ using namespace Eigen;
 using namespace std;
 #define TIME_STEP 33
 // robot geometry
-#define WHEEL_RADIUS 0.08
+#define WHEEL_RADIUS 0.05
 #define LX 0.135  // longitudinal distance from robot's COM to wheel [m].
 #define LY 0.237  // lateral distance from robot's COM to wheel [m].
 
