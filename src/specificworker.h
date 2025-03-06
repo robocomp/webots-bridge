@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2024 by YOUR NAME HERE
+ *    Copyright (C) 2025 by YOUR NAME HERE
  *
  *    This file is part of RoboComp
  *
@@ -22,9 +22,11 @@
 	@author authorname
 */
 
+
+
 #ifndef SPECIFICWORKER_H
 #define SPECIFICWORKER_H
-#define DEBUG 0
+
 #define HIBERNATION_ENABLED
 
 #include <genericworker.h>
@@ -36,17 +38,19 @@
 #include <webots/PositionSensor.hpp>
 #include <webots/Node.hpp>
 #include <webots/Supervisor.hpp>
+#include <webots/Accelerometer.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <opencv2/opencv.hpp>
 #include <opencv2/core.hpp>
 #include <doublebuffer/DoubleBuffer.h>
 #include <fps/fps.h>
-#include <fixedsizedeque.h>
+#include "fixedsizedeque.h"
 #include <atomic>
 #include <chrono>
 
 using namespace Eigen;
+using namespace std;
 #define TIME_STEP 33
 // robot geometry
 #define WHEEL_RADIUS 0.08
@@ -55,127 +59,129 @@ using namespace Eigen;
 
 class SpecificWorker : public GenericWorker
 {
-    Q_OBJECT
-    public:
-        SpecificWorker(TuplePrx tprx, bool startup_check);
-        ~SpecificWorker();
-        bool setParams(RoboCompCommonBehavior::ParameterList params);
+Q_OBJECT
+public:
+	SpecificWorker(const ConfigLoader& configLoader, TuplePrx tprx, bool startup_check);
+	~SpecificWorker();
 
-        RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimple_getAll(std::string camera);
-        RoboCompCameraRGBDSimple::TDepth CameraRGBDSimple_getDepth(std::string camera);
-        RoboCompCameraRGBDSimple::TImage CameraRGBDSimple_getImage(std::string camera);
-        RoboCompCameraRGBDSimple::TPoints CameraRGBDSimple_getPoints(std::string camera);
+	RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight);
+	RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimple_getAll(std::string camera);
+	RoboCompCameraRGBDSimple::TDepth CameraRGBDSimple_getDepth(std::string camera);
+	RoboCompCameraRGBDSimple::TImage CameraRGBDSimple_getImage(std::string camera);
+	RoboCompCameraRGBDSimple::TPoints CameraRGBDSimple_getPoints(std::string camera);
 
-        RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState);
-        RoboCompLaser::LaserConfData Laser_getLaserConfData();
-        RoboCompLaser::TLaserData Laser_getLaserData();
+	RoboCompIMU::Acceleration IMU_getAcceleration();
+	RoboCompIMU::Gyroscope IMU_getAngularVel();
+	RoboCompIMU::DataImu IMU_getDataImu();
+	RoboCompIMU::Magnetic IMU_getMagneticFields();
+	RoboCompIMU::Orientation IMU_getOrientation();
+	void IMU_resetImu();
 
-        RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor);
-        RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance, int decimationDegreeFactor);
-        RoboCompLidar3D::TData Lidar3D_getLidarDataProyectedInImage(std::string name){ return RoboCompLidar3D::TData();};
-        RoboCompLidar3D::TDataImage Lidar3D_getLidarDataArrayProyectedInImage(std::string name);
+	RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState);
+	RoboCompLaser::LaserConfData Laser_getLaserConfData();
+	RoboCompLaser::TLaserData Laser_getLaserData();
+	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor);
+	RoboCompLidar3D::TDataImage Lidar3D_getLidarDataArrayProyectedInImage(std::string name);
+	RoboCompLidar3D::TData Lidar3D_getLidarDataProyectedInImage(std::string name);
+	RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance, int decimationDegreeFactor);
 
-        RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight);
+	void OmniRobot_correctOdometer(int x, int z, float alpha);
+	void OmniRobot_getBasePose(int &x, int &z, float &alpha);
+	void OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state);
+	void OmniRobot_resetOdometer();
+	void OmniRobot_setOdometer(RoboCompGenericBase::TBaseState state);
+	void OmniRobot_setOdometerPose(int x, int z, float alpha);
+	void OmniRobot_setSpeedBase(float advx, float advz, float rot);
+	void OmniRobot_stopBase();
 
-        void OmniRobot_correctOdometer(int x, int z, float alpha);
-        void OmniRobot_getBasePose(int &x, int &z, float &alpha);
-        void OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state);
-        void OmniRobot_resetOdometer();
-        void OmniRobot_setOdometer(RoboCompGenericBase::TBaseState state);
-        void OmniRobot_setOdometerPose(int x, int z, float alpha);
-        void OmniRobot_setSpeedBase(float advx, float advz, float rot);
-        void OmniRobot_stopBase();
+	RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects);
+	void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects);
+	void Webots2Robocomp_resetWebots();
+	void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
 
-        RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects);
-        void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects);
+	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
-        void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
-        void Webots2Robocomp_resetWebots();
+public slots:
+	void initialize();
+	void compute();
+	void emergency();
+	void restore();
+	int startup_check();
+private:
+	bool startup_check_flag;
 
-        void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
+    FPSCounter fps;
+    std::atomic<std::chrono::high_resolution_clock::time_point> last_read;
+    int MAX_INACTIVE_TIME = 5;  // secs after which the component is paused. It reactivates with a new reset
 
-    public slots:
-        void initialize();
-        void compute();
-        void emergency();
-        void restore();
-        int startup_check();
+    webots::Supervisor* robot;
+    webots::Lidar* lidar_helios;
+    webots::Lidar* lidar_pearl;
+    webots::Camera* camera;
+    webots::RangeFinder* range_finder;
+    webots::Camera* camera360_1;
+    webots::Camera* camera360_2;
+    webots::Motor *motors[4];
+    webots::PositionSensor *ps[4];
+    webots::Accelerometer* accelerometer;
 
+    void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue);
+    void receiving_cameraRGBData(webots::Camera* _camera);
+    void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
+    void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
 
-    private:
-        bool startup_check_flag;
-        FPSCounter fps;
-        std::atomic<std::chrono::high_resolution_clock::time_point> last_read;
-        int MAX_INACTIVE_TIME = 5;  // secs after which the component is paused. It reactivates with a new reset
+    // Laser
+    RoboCompLaser::TLaserData laserData;
+    RoboCompLaser::LaserConfData laserDataConf;
 
-        webots::Supervisor* robot;
-        webots::Lidar* lidar_helios;
-        webots::Lidar* lidar_pearl;
-        webots::Camera* camera;
-        webots::RangeFinder* range_finder;
-        webots::Camera* camera360_1;
-        webots::Camera* camera360_2;
-        webots::Motor *motors[4];
-        webots::PositionSensor *ps[4];
+    // Lidar3d
+    //    RoboCompLidar3D::TData lidar3dData_helios;
+    //    RoboCompLidar3D::TData lidar3dData_pearl;
 
-        void receiving_lidarData(string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue);
-        void receiving_cameraRGBData(webots::Camera* _camera);
-        void receiving_depthImageData(webots::RangeFinder* _rangeFinder);
-        void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2);
+    // Camera RGBD simple
+    RoboCompCameraRGBDSimple::TDepth depthImage;
+    RoboCompCameraRGBDSimple::TImage cameraImage;
 
-        // Laser
-        RoboCompLaser::TLaserData laserData;
-        RoboCompLaser::LaserConfData laserDataConf;
+    // Camera 360
+    RoboCompCamera360RGB::TImage camera360Image;
 
-        // Lidar3d
-        //    RoboCompLidar3D::TData lidar3dData_helios;
-        //    RoboCompLidar3D::TData lidar3dData_pearl;
+    // Human Tracking
+    struct WebotsHuman{
+        webots::Node *node;
+        RoboCompGridder::TPath path;
+        RoboCompGridder::TPoint currentTarget;
+    };
 
-        // Camera RGBD simple
-        RoboCompCameraRGBDSimple::TDepth depthImage;
-        RoboCompCameraRGBDSimple::TImage cameraImage;
+    std::map<int, WebotsHuman> humanObjects;
+    void parseHumanObjects();
 
-        // Camera 360
-        RoboCompCamera360RGB::TImage camera360Image;
+    // Auxiliar functions
+    void printNotImplementedWarningMessage(std::string functionName);
 
-        // Human Tracking
-        struct WebotsHuman{
-            webots::Node *node;
-            RoboCompGridder::TPath path;
-            RoboCompGridder::TPoint currentTarget;
-        };
+    // Webots2RoboComp interface
+    void moveHumanToNextTarget(int humanId);
+    void humansMovement();
 
-        std::map<int, WebotsHuman> humanObjects;
-        void parseHumanObjects();
+    struct PARAMS
+    {
+        bool delay = false;
+        bool do_joystick = true;
+    };
+    PARAMS pars;
 
-        // Auxiliar functions
-        void printNotImplementedWarningMessage(string functionName);
+    FixedSizeDeque<RoboCompCamera360RGB::TImage> camera_queue{10};
+    //Is it necessary to use two lidar queues? One for each lidaR?
+    FixedSizeDeque<RoboCompLidar3D::TData> pearl_delay_queue{10};
+    FixedSizeDeque<RoboCompLidar3D::TData> helios_delay_queue{10};
 
-        // Webots2RoboComp interface
-        void moveHumanToNextTarget(int humanId);
-        void humansMovement();
+    // Double buffer
+    DoubleBuffer<RoboCompCamera360RGB::TImage, RoboCompCamera360RGB::TImage> double_buffer_360;
 
-        struct PARAMS
-        {
-            bool delay = false;
-            bool do_joystick = true;
-        };
-        PARAMS pars;
+    //Lidar3D doublebuffer
+    DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_helios;
+    DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_pearl;
 
-        FixedSizeDeque<RoboCompCamera360RGB::TImage> camera_queue{10};
-        //Is it necessary to use two lidar queues? One for each lidaR?
-        FixedSizeDeque<RoboCompLidar3D::TData> pearl_delay_queue{10};
-        FixedSizeDeque<RoboCompLidar3D::TData> helios_delay_queue{10};
-
-        // Double buffer
-        DoubleBuffer<RoboCompCamera360RGB::TImage, RoboCompCamera360RGB::TImage> double_buffer_360;
-
-        //Lidar3D doublebuffer
-        DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_helios;
-        DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_pearl;
-
-        Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
-
+    Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
 };
 
 #endif

@@ -1,10 +1,9 @@
-CommonBehavior.Endpoints=tcp -p 10217
-
 # Endpoints for implements interfaces
+Camera360RGB.Endpoints=tcp -p 10098
+CameraRGBDSimple.Endpoints=tcp -p 10096
+IMU.Endpoints=tcp -p 10007
 Laser.Endpoints=tcp -p 10003
 Lidar3D.Endpoints=tcp -p 11988
-CameraRGBDSimple.Endpoints=tcp -p 10096
-Camera360RGB.Endpoints=tcp -p 10098
 OmniRobot.Endpoints=tcp -p 10004
 VisualElements.Endpoints=tcp -p 10005
 Webots2Robocomp.Endpoints=tcp -p 10006
@@ -17,6 +16,10 @@ JoystickAdapterTopic.Endpoints=tcp -p 11025
 # This property is used by the clients to connect to IceStorm.
 TopicManager.Proxy=IceStorm/TopicManager:default -p 9999
 
+Period.Compute=100
+Period.Emergency=500
+
+# Params
 delay=True  # activate delay for the simulation
 do_joystick=True   # execute joystick commands in the simulator
 

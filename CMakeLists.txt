@@ -12,9 +12,11 @@ SET(RC_COMPONENT_INSTALL_PATH "/home/robocomp/robocomp" CACHE STRING "component 
 #STRING(STRIP ${COMPONENT_NAME} COMPONENT_NAME)
 #SET(COMPONENT_NAME ${COMPONENT_NAME} CACHE STRING "component name" FORCE)
 
-SUBDIRS( src )
+SUBDIRS(generated)
 
 INSTALL(FILES etc/config DESTINATION ${RC_COMPONENT_INSTALL_PATH}/etc-default/ RENAME Webots2Robocomp.conf )
 
 #ADD_CUSTOM_TARGET(doc doxygen Doxyfile)
 #ADD_CUSTOM_TARGET(installdoc mkdir -p ${RC_COMPONENT_INSTALL_PATH}/doc COMMAND cp -R doc/html ${RC_COMPONENT_INSTALL_PATH}/doc/Webots2Robocomp )
+
+
