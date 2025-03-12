@@ -1,24 +1,23 @@
-
-# This property is used by the clients to connect to IceStorm.
-Proxies.TopicManager = "IceStorm/TopicManager:default -p 9999"
-
 # Endpoints for implements interfaces
-Endpoints.Camera360RGB = "tcp -p 10098"
-Endpoints.CameraRGBDSimple = "tcp -p 10096"
-Endpoints.IMU = "tcp -p 10007"
-Endpoints.Laser = "tcp -p 10003"
-Endpoints.Lidar3D = "tcp -p 11988"
-Endpoints.OmniRobot = "tcp -p 10004"
-Endpoints.VisualElements = "tcp -p 10005"
-Endpoints.Webots2Robocomp = "tcp -p 10006"
+Camera360RGB.Endpoints=tcp -p 10098
+CameraRGBDSimple.Endpoints=tcp -p 10096
+IMU.Endpoints=tcp -p 10007
+Laser.Endpoints=tcp -p 10003
+Lidar3D.Endpoints=tcp -p 11988
+OmniRobot.Endpoints=tcp -p 10004
+VisualElements.Endpoints=tcp -p 10005
+Webots2Robocomp.Endpoints=tcp -p 10006
 
 # Endpoints for subscriptions interfaces
-Endpoints.JoystickAdapterTopic = "tcp -p 11025"
+JoystickAdapterTopic.Endpoints=tcp -p 11025
 
-Period.Compute = 100
-Period.Emergency = 500
+# This property is used by the clients to connect to IceStorm.
+TopicManager.Proxy=IceStorm/TopicManager:default -p 9999
 
-Ice.Warn.Connections = "0"
-Ice.Trace.Network = "0"
-Ice.Trace.Protocol = "0"
-Ice.MessageSizeMax = "20004800"
+Period.Compute=100
+Period.Emergency=500
+
+Ice.Warn.Connections=0
+Ice.Trace.Network=0
+Ice.Trace.Protocol=0
+Ice.MessageSizeMax=20004800
