@@ -106,7 +106,13 @@ public:
 		this->configFile = configFile.toStdString();
 		this->prefix = prfx.toStdString();
 		this->startup_check_flag=startup_check; 
+
+		this->configLoader.load(this->configFile);
+		this->configLoader.printConfig();
 		}
+
+	Ice::InitializationData getInitializationDataIce();
+
 private:
 	void initialize();
 	std::string prefix, configFile;
@@ -118,13 +124,23 @@ public:
 	virtual int run(int, char*[]);
 };
 
-void ::Webots2Robocomp::initialize()
+Ice::InitializationData Webots2Robocomp::getInitializationDataIce(){
+        Ice::InitializationData initData;
+        initData.properties = Ice::createProperties();
+        initData.properties->setProperty("Ice.Warn.Connections", this->configLoader.get<std::string>("Ice.Warn.Connections"));
+        initData.properties->setProperty("Ice.Trace.Network", this->configLoader.get<std::string>("Ice.Trace.Network"));
+        initData.properties->setProperty("Ice.Trace.Protocol", this->configLoader.get<std::string>("Ice.Trace.Protocol"));
+        initData.properties->setProperty("Ice.MessageSizeMax", this->configLoader.get<std::string>("Ice.MessageSizeMax"));
+		return initData;
+}
+
+void Webots2Robocomp::initialize()
 {
     this->configLoader.load(this->configFile);
 	this->configLoader.printConfig();
 }
 
-int ::Webots2Robocomp::run(int argc, char* argv[])
+int Webots2Robocomp::run(int argc, char* argv[])
 {
 #ifdef USE_QTGUI
 	QApplication a(argc, argv);  // GUI application
@@ -154,7 +170,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 	IceStorm::TopicManagerPrxPtr topicManager;
 	try
 	{
-		topicManager = Ice::checkedCast<IceStorm::TopicManagerPrx>(communicator()->stringToProxy(configLoader.get<std::string>("TopicManager.Proxy")));
+		topicManager = Ice::checkedCast<IceStorm::TopicManagerPrx>(communicator()->stringToProxy(configLoader.get<std::string>("Proxies.TopicManager")));
 		if (!topicManager)
 		{
 		    std::cout << "[" << PROGRAM_NAME << "]: TopicManager.Proxy not defined in config file."<<std::endl;
@@ -178,7 +194,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Camera360RGB.Endpoints");
+		    tmp = configLoader.get<std::string>("Endpoints.Camera360RGB");
 		    Ice::ObjectAdapterPtr adapterCamera360RGB = communicator()->createObjectAdapterWithEndpoints("Camera360RGB", tmp);
 			auto camera360rgb = std::make_shared<Camera360RGBI>(worker);
 			adapterCamera360RGB->add(camera360rgb, Ice::stringToIdentity("camera360rgb"));
@@ -193,7 +209,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("CameraRGBDSimple.Endpoints");
+		    tmp = configLoader.get<std::string>("Endpoints.CameraRGBDSimple");
 		    Ice::ObjectAdapterPtr adapterCameraRGBDSimple = communicator()->createObjectAdapterWithEndpoints("CameraRGBDSimple", tmp);
 			auto camerargbdsimple = std::make_shared<CameraRGBDSimpleI>(worker);
 			adapterCameraRGBDSimple->add(camerargbdsimple, Ice::stringToIdentity("camerargbdsimple"));
@@ -208,7 +224,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("IMU.Endpoints");
+		    tmp = configLoader.get<std::string>("Endpoints.IMU");
 		    Ice::ObjectAdapterPtr adapterIMU = communicator()->createObjectAdapterWithEndpoints("IMU", tmp);
 			auto imu = std::make_shared<IMUI>(worker);
 			adapterIMU->add(imu, Ice::stringToIdentity("imu"));
@@ -223,7 +239,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Laser.Endpoints");
+		    tmp = configLoader.get<std::string>("Endpoints.Laser");
 		    Ice::ObjectAdapterPtr adapterLaser = communicator()->createObjectAdapterWithEndpoints("Laser", tmp);
 			auto laser = std::make_shared<LaserI>(worker);
 			adapterLaser->add(laser, Ice::stringToIdentity("laser"));
@@ -238,7 +254,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Lidar3D.Endpoints");
+		    tmp = configLoader.get<std::string>("Endpoints.Lidar3D");
 		    Ice::ObjectAdapterPtr adapterLidar3D = communicator()->createObjectAdapterWithEndpoints("Lidar3D", tmp);
 			auto lidar3d = std::make_shared<Lidar3DI>(worker);
 			adapterLidar3D->add(lidar3d, Ice::stringToIdentity("lidar3d"));
@@ -253,7 +269,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("OmniRobot.Endpoints");
+		    tmp = configLoader.get<std::string>("Endpoints.OmniRobot");
 		    Ice::ObjectAdapterPtr adapterOmniRobot = communicator()->createObjectAdapterWithEndpoints("OmniRobot", tmp);
 			auto omnirobot = std::make_shared<OmniRobotI>(worker);
 			adapterOmniRobot->add(omnirobot, Ice::stringToIdentity("omnirobot"));
@@ -268,7 +284,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("VisualElements.Endpoints");
+		    tmp = configLoader.get<std::string>("Endpoints.VisualElements");
 		    Ice::ObjectAdapterPtr adapterVisualElements = communicator()->createObjectAdapterWithEndpoints("VisualElements", tmp);
 			auto visualelements = std::make_shared<VisualElementsI>(worker);
 			adapterVisualElements->add(visualelements, Ice::stringToIdentity("visualelements"));
@@ -283,7 +299,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Webots2Robocomp.Endpoints");
+		    tmp = configLoader.get<std::string>("Endpoints.Webots2Robocomp");
 		    Ice::ObjectAdapterPtr adapterWebots2Robocomp = communicator()->createObjectAdapterWithEndpoints("Webots2Robocomp", tmp);
 			auto webots2robocomp = std::make_shared<Webots2RobocompI>(worker);
 			adapterWebots2Robocomp->add(webots2robocomp, Ice::stringToIdentity("webots2robocomp"));
@@ -301,7 +317,7 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 
-		    tmp = configLoader.get<std::string>("JoystickAdapterTopic.Endpoints");
+		    tmp = configLoader.get<std::string>("Endpoints.JoystickAdapterTopic");
 			Ice::ObjectAdapterPtr JoystickAdapter_adapter = communicator()->createObjectAdapterWithEndpoints("joystickadapter", tmp);
 			RoboCompJoystickAdapter::JoystickAdapterPtr joystickadapterI_ =  std::make_shared <JoystickAdapterI>(worker);
 			auto joystickadapter = JoystickAdapter_adapter->addWithUUID(joystickadapterI_)->ice_oneway();
@@ -369,8 +385,8 @@ int ::Webots2Robocomp::run(int argc, char* argv[])
 	{
 		status = EXIT_FAILURE;
 
-		std::cout << "[" << PROGRAM_NAME << "]: Exception raised on main thread: " << std::endl;
-		std::cout << ex;
+		std::cerr << "[" << PROGRAM_NAME << "]: Exception raised on main thread: " << std::endl;
+		std::cerr << ex;
 
 	}
 	#ifdef USE_QTGUI
@@ -425,7 +441,7 @@ int main(int argc, char* argv[])
 		}
 
 	}
-	::Webots2Robocomp app(configFile, prefix, startup_check_flag);
+	Webots2Robocomp app(configFile, prefix, startup_check_flag);
 
-	return app.main(argc, argv);
+	return app.main(argc, argv, app.getInitializationDataIce());
 }
