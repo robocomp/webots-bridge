@@ -121,12 +121,16 @@ void SpecificWorker::initialize()
 
 void SpecificWorker::compute()
 {
+    // Getting simulation timestamp
+    double now = robot->getTime() * 1000;
     // Getting the data from simulation.
-    if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue);
-    if(lidar_pearl) receiving_lidarData("bpearl", lidar_pearl, double_buffer_pearl, pearl_delay_queue);
-    if(camera) receiving_cameraRGBData(camera);
-    if(range_finder) receiving_depthImageData(range_finder);
-    if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2);
+    if(robot) receiving_robotSpeed(robot, now);
+    if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue, now);
+    if(lidar_pearl) receiving_lidarData("bpearl", lidar_pearl, double_buffer_pearl, pearl_delay_queue, now);
+    if(camera) receiving_cameraRGBData(camera, now);
+    if(range_finder) receiving_depthImageData(range_finder, now);
+    if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
+
 //    robot->step(this->Period);
 
     robot->step(1);
@@ -182,7 +186,7 @@ int SpecificWorker::startup_check()
 
 #pragma region Data-Catching Methods
 
-void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2)
+void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, double timestamp)
 {
 
 #ifdef HIBERNATION_ENABLED
@@ -199,10 +203,10 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     }
 
     // Timestamp calculation
-    auto now = std::chrono::system_clock::now();
-    auto duration = now.time_since_epoch();
-    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-    newImage360.alivetime = millis;
+//    auto now = std::chrono::system_clock::now();
+//    auto duration = now.time_since_epoch();
+//    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    newImage360.alivetime = timestamp;
 
     // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
     newImage360.width = 2 * _camera1->getWidth();
@@ -242,7 +246,50 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     //std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 }
 
-void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue)
+void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double timestamp)
+{
+    webots::Node *robotNode = _robot->getFromDef("shadow");
+    auto shadow_velocity = robotNode->getVelocity();
+    auto shadow_orientation = robotNode->getOrientation();
+    float orientation = atan2(shadow_orientation[1], shadow_orientation[0]) - M_PI_2;
+
+    Eigen::Matrix2f rt_rotation_matrix;
+    rt_rotation_matrix << cos(orientation), -sin(orientation),
+            sin(orientation), cos(orientation);
+
+    // Multiply the velocity vector by the inverse of the rotation matrix to get the velocity in the robot reference system
+    Eigen::Vector2f shadow_velocity_2d(shadow_velocity[1], shadow_velocity[0]);
+    Eigen::Vector2f rt_rotation_matrix_inv = rt_rotation_matrix.inverse() * shadow_velocity_2d;
+
+    // Velocidades puras en mm/s y rad/s
+    double velocidad_x = 0.1; // Ejemplo: 100 mm/s
+    double velocidad_y = 0.1; // Ejemplo: 150 mm/s
+    double alpha = 0.075; // Ejemplo: 0.05 rad/s
+
+    // Desviación estándar del ruido (ejemplo: 5% del valor de las velocidades)
+    double ruido_stddev_x = 0.05 * velocidad_x;
+    double ruido_stddev_y = 0.05 * velocidad_y;
+    double ruido_stddev_alpha = 0.05 * alpha;
+
+    RoboCompFullPoseEstimation::FullPoseEuler pose_data;
+
+    pose_data.vx = -rt_rotation_matrix_inv(0) + generate_noise(ruido_stddev_x);
+    pose_data.vy = -rt_rotation_matrix_inv(1) + generate_noise(ruido_stddev_y);
+    pose_data.vrz = shadow_velocity[5] + generate_noise(ruido_stddev_alpha);
+    pose_data.timestamp = timestamp;
+
+    this->fullposeestimationpub_pubproxy->newFullPose(pose_data);
+}
+
+double SpecificWorker::generate_noise(double stddev)
+{
+    std::random_device rd; // Obtiene una semilla aleatoria del hardware
+    std::mt19937 gen(rd()); // Generador de números aleatorios basado en Mersenne Twister
+    std::normal_distribution<> d(0, stddev); // Distribución normal con media 0 y desviación estándar stddev
+    return d(gen);
+}
+
+void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp)
 {
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
@@ -259,9 +306,9 @@ void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, Dou
     double verticalFov = _lidar->getVerticalFov();
 
     // Timestamp calculation
-    auto now = std::chrono::system_clock::now();
-    auto duration = now.time_since_epoch();
-    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+//    auto now = std::chrono::system_clock::now();
+//    auto duration = now.time_since_epoch();
+//    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
     // Configuration settings
     RoboCompLaser::TLaserData newLaserData;
@@ -269,7 +316,7 @@ void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, Dou
     RoboCompLidar3D::TData newLidar3dData;
 
     // General Lidar values
-    newLidar3dData.timestamp = millis;
+    newLidar3dData.timestamp = timestamp;
     newLidar3dData.period = fps.get_period();
     newLaserConfData.maxDegrees = fov;
     newLaserConfData.maxRange = maxRange;
@@ -344,8 +391,8 @@ void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, Dou
 
     _lidar3dData.put(std::move(newLidar3dData));
 }
-void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
-
+void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double timestamp)
+{
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
@@ -356,10 +403,10 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
     newImage.period = fps.get_period();
 
     // Timestamp calculation
-    auto now = std::chrono::system_clock::now();
-    auto duration = now.time_since_epoch();
-    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-    newImage.alivetime = millis;
+//    auto now = std::chrono::system_clock::now();
+//    auto duration = now.time_since_epoch();
+//    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    newImage.alivetime = timestamp;
 
     // Obtener la resolución de la imagen.
     newImage.width = _camera->getWidth();
@@ -394,7 +441,8 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera){
     // Asignamos el resultado final al atributo de clase
     this->cameraImage = newImage;
 }
-void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder){
+void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder, double timestamp)
+{
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
@@ -1009,6 +1057,9 @@ void SpecificWorker::parseHumanObjects() {
 }
 
 
+/**************************************/
+// From the RoboCompFullPoseEstimationPub you can publish calling this methods:
+// RoboCompFullPoseEstimationPub::void this->fullposeestimationpub_pubproxy->newFullPose(RoboCompFullPoseEstimation::FullPoseEuler pose)
 
 /**************************************/
 // From the RoboCompCamera360RGB you can use this types:

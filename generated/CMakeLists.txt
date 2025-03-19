@@ -15,11 +15,6 @@ else()
 endif()
 
 
-IF ( "$ENV{ROBOCOMP}" STREQUAL "")
-  MESSAGE(WARNING "ROBOCOMP variable not set. Using the default value: /home/robocomp/robocomp")
-  SET (ENV{ROBOCOMP} "/home/robocomp/robocomp/")
-ENDIF ( "$ENV{ROBOCOMP}" STREQUAL "")
-
 IF(NOT EXISTS $ENV{ROBOCOMP}/cmake)
   MESSAGE(FATAL_ERROR "Couldn't find RoboComp in $ENV{ROBOCOMP}! Exiting...")
 ENDIF(NOT EXISTS $ENV{ROBOCOMP}/cmake)
@@ -54,8 +49,8 @@ SET (SOURCES
 
 #ROBOCOMP
 ROBOCOMP_INITIALIZE( $ENV{ROBOCOMP}/ )
-ROBOCOMP_IDSL_TO_ICE(Camera360RGB Camera360RGB CameraRGBDSimple GenericBase GenericBase Gridder IMU JoystickAdapter Laser Lidar3D OmniRobot Person VisualElements Webots2Robocomp)
-ROBOCOMP_ICE_TO_SRC(Camera360RGB Camera360RGB CameraRGBDSimple GenericBase GenericBase Gridder IMU JoystickAdapter Laser Lidar3D OmniRobot Person VisualElements Webots2Robocomp)
+ROBOCOMP_IDSL_TO_ICE(Camera360RGB Camera360RGB CameraRGBDSimple FullPoseEstimation FullPoseEstimationPub GenericBase GenericBase Gridder IMU JoystickAdapter Laser Lidar3D OmniRobot Person VisualElements Webots2Robocomp)
+ROBOCOMP_ICE_TO_SRC(Camera360RGB Camera360RGB CameraRGBDSimple FullPoseEstimation FullPoseEstimationPub GenericBase GenericBase Gridder IMU JoystickAdapter Laser Lidar3D OmniRobot Person VisualElements Webots2Robocomp)
 SET (EXECUTABLE_OUTPUT_PATH ${RC_COMPONENT_DEVEL_PATH}/bin)
 
 # Specify construction and link process

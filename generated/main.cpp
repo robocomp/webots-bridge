@@ -88,6 +88,7 @@
 #include <joystickadapterI.h>
 
 #include <Camera360RGB.h>
+#include <FullPoseEstimation.h>
 #include <GenericBase.h>
 #include <GenericBase.h>
 #include <Gridder.h>
@@ -163,6 +164,7 @@ int Webots2Robocomp::run(int argc, char* argv[])
 
 	int status=EXIT_SUCCESS;
 
+	RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrxPtr fullposeestimationpub_pubproxy;
 
 	std::string proxy, tmp;
 	initialize();
@@ -183,8 +185,38 @@ int Webots2Robocomp::run(int argc, char* argv[])
 		std::cout << "[" << PROGRAM_NAME << "]: Exception: 'rcnode' not running: " << ex << std::endl;
 		return EXIT_FAILURE;
 	}
+	std::shared_ptr<IceStorm::TopicPrx> fullposeestimationpub_topic;
 
-	tprx = std::tuple<>();
+	while (!fullposeestimationpub_topic)
+	{
+		try
+		{
+			fullposeestimationpub_topic = topicManager->retrieve("FullPoseEstimationPub");
+		}
+		catch (const IceStorm::NoSuchTopic&)
+		{
+			std::cout << "[" << PROGRAM_NAME << "]: ERROR retrieving FullPoseEstimationPub topic. \n";
+			try
+			{
+				fullposeestimationpub_topic = topicManager->create("FullPoseEstimationPub");
+			}
+			catch (const IceStorm::TopicExists&){
+				// Another client created the topic.
+				std::cout << "[" << PROGRAM_NAME << "]: ERROR publishing the FullPoseEstimationPub topic. It's possible that other component have created\n";
+			}
+		}
+		catch(const IceUtil::NullHandleException&)
+		{
+			std::cout << "[" << PROGRAM_NAME << "]: ERROR TopicManager is Null. Check that your configuration file contains an entry like:\n"<<
+			"\t\tTopicManager.Proxy=IceStorm/TopicManager:default -p <port>\n";
+			return EXIT_FAILURE;
+		}
+	}
+
+	auto fullposeestimationpub_pub = fullposeestimationpub_topic->getPublisher()->ice_oneway();
+	fullposeestimationpub_pubproxy = Ice::uncheckedCast<RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrx>(fullposeestimationpub_pub);
+
+	tprx = std::make_tuple(fullposeestimationpub_pubproxy);
 	SpecificWorker *worker = new SpecificWorker(this->configLoader, tprx, startup_check_flag);
 	QObject::connect(worker, SIGNAL(kill()), &a, SLOT(quit()));
 

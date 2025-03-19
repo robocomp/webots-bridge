@@ -32,10 +32,11 @@
 #include <unordered_map>
 
 
-
 #include <Camera360RGB.h>
 #include <Camera360RGB.h>
 #include <CameraRGBDSimple.h>
+#include <FullPoseEstimation.h>
+#include <FullPoseEstimationPub.h>
 #include <GenericBase.h>
 #include <Gridder.h>
 #include <IMU.h>
@@ -49,7 +50,7 @@
 
 #define BASIC_PERIOD 100
 
-using TuplePrx = std::tuple<>;
+using TuplePrx = std::tuple<RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrxPtr>;
 
 
 class GenericWorker : public QObject
@@ -68,6 +69,7 @@ public:
 	std::atomic_bool hibernation = false;
 
 
+	RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrxPtr fullposeestimationpub_pubproxy;
 
 	virtual RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight) = 0;
 	virtual RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimple_getAll(std::string camera) = 0;
@@ -104,6 +106,7 @@ public:
 protected:
 	std::unordered_map<std::string, std::unique_ptr<GRAFCETStep>> states;
 	ConfigLoader configLoader;
+
 
 
 
