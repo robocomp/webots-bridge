@@ -2,14 +2,14 @@
 This project aims to build middleware that facilitates communication and integration between the Webots robotics simulator and the Robocomp framework.
 
 ## Webots Robot Configuration
-For the middleware to effectively communicate with the robot in Webots, it's essential to configure the robot's controller to \<extern>. This ensures that the robot's behavior is externally controlled by a program outside Webots, in this case, our middleware.
+For the component to effectively communicate with the robot in Webots, it's essential to configure the robot's controller to \<extern> in your Webots scene. This ensures that the robot's behavior is externally controlled by a program outside Webots, in this case, our middleware.
 
 ### Steps to Configure Robot in Webots
 **Open your Webots world file:** This is typically a .wbt file where your robot and environment are defined.
 
 **Select your robot node:** In the scene tree (usually on the left side of the Webots interface), find and select your robot node.
 
-**Modify the controller field:** In the robot's properties (usually on the right side of the Webots interface), find the controller field. Change its value to \<extern>.
+**Modify the controller field:** In the robot's properties (usually on the right side of the Webots interface), find the **controller** field. Change its value to \<extern>.
 
 **Save the world file:** Ensure you save the .wbt file after making this change.
 
@@ -18,9 +18,8 @@ Now, when you run the simulation in Webots, the robot will wait for an external 
 ## Connecting Middleware to Webots
 Once the robot's controller is set to \<extern>, ensure your middleware is ready to connect. Typically, you'd do this:
 
-Start Webots and play the simulation.
-
-Launch the middleware. It should automatically detect the robot waiting for an external controller and establish a connection.
+    · Start Webots and play the simulation.
+    · Launch the middleware. It should automatically detect the robot waiting for an external controller and establish a connection.
 
 
 ## Configuration parameters
