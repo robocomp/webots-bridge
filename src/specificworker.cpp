@@ -82,6 +82,8 @@ void SpecificWorker::initialize()
         last_read.store(std::chrono::high_resolution_clock::now());
 
         robot = new webots::Supervisor();
+        robotNode = robot->getFromDef("shadow");
+
 
         // Inicializa los motores y los sensores de posición.
         const char *motorNames[4] = {"wheel2", "wheel1", "wheel4", "wheel3"};
@@ -248,7 +250,6 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
 
 void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double timestamp)
 {
-    webots::Node *robotNode = _robot->getFromDef("shadow");
     auto shadow_velocity = robotNode->getVelocity();
     auto shadow_orientation = robotNode->getOrientation();
     float orientation = atan2(shadow_orientation[1], shadow_orientation[0]) - M_PI_2;
@@ -665,7 +666,6 @@ void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &sta
     hibernation = true;
 #endif
     last_read.store(std::chrono::high_resolution_clock::now());
-    webots::Node *robotNode = robot->getFromDef("shadow");
 
     state.x = robotNode->getField("translation")->getSFVec3f()[0];
     state.z = robotNode->getField("translation")->getSFVec3f()[1];
@@ -856,7 +856,6 @@ void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder
 
     if(humanObjects[humanId].path.empty() and path.size() > 3)
     {
-        webots::Node *robotNode = robot->getFromDef("shadow");
         RoboCompGridder::TPath transformed_path;
 
         auto x = robotNode->getField("translation")->getSFVec3f()[0] * 1000;
@@ -992,10 +991,40 @@ RoboCompIMU::Orientation SpecificWorker::IMU_getOrientation()
 #ifdef HIBERNATION_ENABLED
     hibernation = true;
 #endif
-    RoboCompIMU::Orientation ret{};
-    //implementCODE
+    auto orientation = robotNode->getOrientation();
+    auto [roll, pitch, yaw] = rotationMatrixToEulerZYX(orientation);
 
+    RoboCompIMU::Orientation ret{
+        roll,
+        pitch,
+        yaw
+    };
     return ret;
+}
+
+std::tuple<float, float, float> SpecificWorker::rotationMatrixToEulerZYX(const double* R)
+{
+    float roll, pitch, yaw;
+
+    if (R[6] < 1.0) {
+        if (R[6] > -1.0) {
+            pitch = std::asin(-R[6]);
+            roll  = std::atan2(R[7], R[8]);
+            yaw   = std::atan2(R[3], R[0]);
+        } else {
+            // R[6] == -1
+            pitch = M_PI / 2.0;
+            roll  = -std::atan2(-R[1], R[4]);
+            yaw   = 0.0;
+        }
+    } else {
+        // R[6] == +1
+        pitch = -M_PI / 2.0;
+        roll  = std::atan2(-R[1], R[4]);
+        yaw   = 0.0;
+    }
+
+    return {roll, pitch, yaw};
 }
 
 void SpecificWorker::IMU_resetImu()

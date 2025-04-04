@@ -114,6 +114,7 @@ private:
     std::atomic<std::chrono::high_resolution_clock::time_point> last_read;
     int MAX_INACTIVE_TIME = 5;  // secs after which the component is paused. It reactivates with a new reset
 
+    webots::Node* robotNode;
     webots::Supervisor* robot;
     webots::Lidar* lidar_helios;
     webots::Lidar* lidar_pearl;
@@ -184,6 +185,8 @@ private:
     DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_pearl;
 
     Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
+    std::tuple<float, float, float> rotationMatrixToEulerZYX(const double* R);
+
 };
 
 #endif
