@@ -250,8 +250,9 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
 
 void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double timestamp)
 {
-    auto shadow_velocity = robotNode->getVelocity();
-    auto shadow_orientation = robotNode->getOrientation();
+    const double* shadow_position = robotNode->getPosition();
+    const double* shadow_orientation = robotNode->getOrientation();
+    const double* shadow_velocity = robotNode->getVelocity();
     float orientation = atan2(shadow_orientation[1], shadow_orientation[0]) - M_PI_2;
 
     Eigen::Matrix2f rt_rotation_matrix;
@@ -274,8 +275,21 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double tim
 
     RoboCompFullPoseEstimation::FullPoseEuler pose_data;
 
+    // Posición
+    pose_data.x = shadow_position[0];  // metros → mm
+    pose_data.y = shadow_position[1];
+    pose_data.z = shadow_position[2];
+
+    // Orientación (Euler en radianes) 2D
+    pose_data.rx = 0.0;
+    pose_data.ry = 0.0;
+    pose_data.rz = orientation;  // Ángulo Z ya calculado
+
     pose_data.vx = -rt_rotation_matrix_inv(0) + generate_noise(ruido_stddev_x);
     pose_data.vy = -rt_rotation_matrix_inv(1) + generate_noise(ruido_stddev_y);
+    pose_data.vz = 0;
+    pose_data.vrx = 0;
+    pose_data.vry = 0;
     pose_data.vrz = shadow_velocity[5] + generate_noise(ruido_stddev_alpha);
     pose_data.timestamp = timestamp;
 
@@ -615,6 +629,17 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::
     last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("Lidar3D_getLidarDataWithThreshold2d");
     return RoboCompLidar3D::TData();
+}
+
+RoboCompLidar3D::TDataCategory SpecificWorker::Lidar3D_getLidarDataByCategory(RoboCompLidar3D::TCategories categories, Ice::Long timestamp)
+{
+	#ifdef HIBERNATION_ENABLED
+		hibernation = true;
+	#endif
+	RoboCompLidar3D::TDataCategory ret{};
+	//implementCODE
+
+	return ret;
 }
 
 RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedInImage(std::string name)
@@ -1121,6 +1146,7 @@ void SpecificWorker::parseHumanObjects() {
 // RoboCompLidar3D::TPoint
 // RoboCompLidar3D::TDataImage
 // RoboCompLidar3D::TData
+// RoboCompLidar3D::TDataCategory
 
 /**************************************/
 // From the RoboCompOmniRobot you can use this types:

@@ -39,6 +39,11 @@ RoboCompLidar3D::TDataImage Lidar3DI::getLidarDataArrayProyectedInImage(std::str
 	return worker->Lidar3D_getLidarDataArrayProyectedInImage(name);
 }
 
+RoboCompLidar3D::TDataCategory Lidar3DI::getLidarDataByCategory(RoboCompLidar3D::TCategories categories, Ice::Long timestamp, const Ice::Current&)
+{
+	return worker->Lidar3D_getLidarDataByCategory(categories, timestamp);
+}
+
 RoboCompLidar3D::TData Lidar3DI::getLidarDataProyectedInImage(std::string name, const Ice::Current&)
 {
 	return worker->Lidar3D_getLidarDataProyectedInImage(name);
