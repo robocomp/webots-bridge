@@ -39,6 +39,7 @@
 #include <webots/Node.hpp>
 #include <webots/Supervisor.hpp>
 #include <webots/Accelerometer.hpp>
+#include <webots/Gyro.hpp>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <opencv2/opencv.hpp>
@@ -126,6 +127,7 @@ private:
     webots::Motor *motors[4];
     webots::PositionSensor *ps[4];
     webots::Accelerometer* accelerometer;
+    webots::Gyro* gyroscope;
 
     void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp);
     void receiving_cameraRGBData(webots::Camera* _camera, double timestamp);

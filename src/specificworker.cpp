@@ -97,6 +97,7 @@ void SpecificWorker::initialize()
         camera360_1 = robot->getCamera("camera_360_1");
         camera360_2 = robot->getCamera("camera_360_2");
         accelerometer = robot->getAccelerometer("accelerometer");
+        gyroscope = robot->getGyro("gyro");
 
         // Activa los componentes en la simulación si los detecta.
         if(lidar_helios) lidar_helios->enable(this->getPeriod("Compute"));
@@ -116,6 +117,7 @@ void SpecificWorker::initialize()
             motors[i]->setVelocity(0);
         }
         if(accelerometer) accelerometer->enable(this->getPeriod("Compute"));
+        if(gyroscope) gyroscope->enable(this->getPeriod("Compute"));
 
         this->setPeriod("Compute", 10);
     }
