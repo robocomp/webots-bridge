@@ -288,17 +288,17 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double tim
     RoboCompFullPoseEstimation::FullPoseEuler pose_data;
 
     // Posición
-    pose_data.x = shadow_position[0];  // metros → mm
-    pose_data.y = shadow_position[1];
-    pose_data.z = shadow_position[2];
+    pose_data.x = -shadow_position[1] * 1000;  // metros → mm
+    pose_data.y = shadow_position[0] * 1000;
+    pose_data.z = shadow_position[2] * 1000;
 
     // Orientación (Euler en radianes) 2D
-    pose_data.rx = rx;
-    pose_data.ry = ry;
+    pose_data.rx = -ry;
+    pose_data.ry = rx;
     pose_data.rz = rz;
 
-    pose_data.vx = -rt_rotation_matrix_inv(0) + generate_noise(ruido_stddev_x);
-    pose_data.vy = -rt_rotation_matrix_inv(1) + generate_noise(ruido_stddev_y);
+    pose_data.vx = rt_rotation_matrix_inv(1) + generate_noise(ruido_stddev_y);
+    pose_data.vy = -rt_rotation_matrix_inv(0) + generate_noise(ruido_stddev_x);
     pose_data.vz = 0;
     pose_data.vrx = 0;
     pose_data.vry = 0;
@@ -747,10 +747,10 @@ void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
     advz *= 0.001;
     advx *= 0.001;
 
-    speeds[0] = 1.0 / WHEEL_RADIUS * (advz + advx + (LX + LY) * rot);
-    speeds[1] = 1.0 / WHEEL_RADIUS * (advz - advx - (LX + LY) * rot);
-    speeds[2] = 1.0 / WHEEL_RADIUS * (advz - advx + (LX + LY) * rot);
-    speeds[3] = 1.0 / WHEEL_RADIUS * (advz + advx - (LX + LY) * rot);
+    speeds[0] = 1.0 / WHEEL_RADIUS * (advz + advx + (LX + LY) * -rot);
+    speeds[1] = 1.0 / WHEEL_RADIUS * (advz - advx - (LX + LY) * -rot);
+    speeds[2] = 1.0 / WHEEL_RADIUS * (advz - advx + (LX + LY) * -rot);
+    speeds[3] = 1.0 / WHEEL_RADIUS * (advz + advx - (LX + LY) * -rot);
     printf("Speeds: vx=%.2f[m/s] vy=%.2f[m/s] ω=%.2f[rad/s]\n", advx, advz, rot);
     for (int i = 0; i < 4; i++)
     {
