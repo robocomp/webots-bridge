@@ -253,6 +253,18 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double tim
     const double* shadow_position = robotNode->getPosition();
     const double* shadow_orientation = robotNode->getOrientation();
     const double* shadow_velocity = robotNode->getVelocity();
+
+    double r11 = shadow_orientation[0], r12 = shadow_orientation[1], r13 = shadow_orientation[2];
+    double r21 = shadow_orientation[3], r22 = shadow_orientation[4], r23 = shadow_orientation[5];
+    double r31 = shadow_orientation[6], r32 = shadow_orientation[7], r33 = shadow_orientation[8];
+
+    // Yaw (Z)
+    double rz = atan2(r21, r11);
+    // Pitch (Y)
+    double ry = atan2(-r31, sqrt(r32*r32 + r33*r33));
+    // Roll (X)
+    double rx = atan2(r32, r33);
+
     float orientation = atan2(shadow_orientation[1], shadow_orientation[0]) - M_PI_2;
 
     Eigen::Matrix2f rt_rotation_matrix;
@@ -281,9 +293,9 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double tim
     pose_data.z = shadow_position[2];
 
     // Orientación (Euler en radianes) 2D
-    pose_data.rx = 0.0;
-    pose_data.ry = 0.0;
-    pose_data.rz = orientation;  // Ángulo Z ya calculado
+    pose_data.rx = rx;
+    pose_data.ry = ry;
+    pose_data.rz = rz;
 
     pose_data.vx = -rt_rotation_matrix_inv(0) + generate_noise(ruido_stddev_x);
     pose_data.vy = -rt_rotation_matrix_inv(1) + generate_noise(ruido_stddev_y);
