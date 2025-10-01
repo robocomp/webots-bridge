@@ -15,6 +15,12 @@ For the component to effectively communicate with the robot in Webots, it's esse
 
 Now, when you run the simulation in Webots, the robot will wait for an external controller (**Webots2Robocomp** in this case) to connect and take control.
 
+## Measures
+
+This component implements diferents interfaces that works with the following measures:
+
+- **Lidar3D**: milimeters.
+
 ## Connecting Middleware to Webots
 Once the robot's controller is set to `<extern>`, ensure your middleware is ready to connect. Typically, you'd do this:
 
