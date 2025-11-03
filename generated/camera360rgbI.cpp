@@ -18,9 +18,12 @@
  */
 #include "camera360rgbI.h"
 
-Camera360RGBI::Camera360RGBI(GenericWorker *_worker)
+Camera360RGBI::Camera360RGBI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
-	worker = _worker;
+	getROIHandlers = {
+		[this](auto a, auto b, auto c, auto d, auto e, auto f) { return worker->Camera360RGB_getROI(a, b, c, d, e, f); }
+	};
+
 }
 
 
@@ -31,6 +34,15 @@ Camera360RGBI::~Camera360RGBI()
 
 RoboCompCamera360RGB::TImage Camera360RGBI::getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight, const Ice::Current&)
 {
-	return worker->Camera360RGB_getROI(cx, cy, sx, sy, roiwidth, roiheight);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getROIHandlers.size())
+		return  getROIHandlers[id](cx, cy, sx, sy, roiwidth, roiheight);
+	else
+		throw std::out_of_range("Invalid getROI id: " + std::to_string(id));
+
 }
 

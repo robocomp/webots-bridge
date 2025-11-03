@@ -23,13 +23,13 @@
 #include <Ice/Ice.h>
 #include <Camera360RGB.h>
 
-#include "genericworker.h"
+#include "../src/specificworker.h"
 
 
 class Camera360RGBI : public virtual RoboCompCamera360RGB::Camera360RGB
 {
 public:
-	Camera360RGBI(GenericWorker *_worker);
+	Camera360RGBI(GenericWorker *_worker, const size_t id);
 	~Camera360RGBI();
 
 	RoboCompCamera360RGB::TImage getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight, const Ice::Current&);
@@ -37,6 +37,10 @@ public:
 private:
 
 	GenericWorker *worker;
+	size_t id;
+
+	// Array handlers for each method
+	std::array<std::function<RoboCompCamera360RGB::TImage(int, int, int, int, int, int)>, 1> getROIHandlers;
 
 };
 

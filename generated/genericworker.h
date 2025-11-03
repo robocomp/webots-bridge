@@ -33,7 +33,6 @@
 
 
 #include <Camera360RGB.h>
-#include <Camera360RGB.h>
 #include <CameraRGBDSimple.h>
 #include <FullPoseEstimation.h>
 #include <FullPoseEstimationPub.h>
@@ -72,24 +71,30 @@ public:
 	RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrxPtr fullposeestimationpub_pubproxy;
 
 	virtual RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight) = 0;
+
 	virtual RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimple_getAll(std::string camera) = 0;
 	virtual RoboCompCameraRGBDSimple::TDepth CameraRGBDSimple_getDepth(std::string camera) = 0;
 	virtual RoboCompCameraRGBDSimple::TImage CameraRGBDSimple_getImage(std::string camera) = 0;
 	virtual RoboCompCameraRGBDSimple::TPoints CameraRGBDSimple_getPoints(std::string camera) = 0;
+
 	virtual RoboCompIMU::Acceleration IMU_getAcceleration() = 0;
 	virtual RoboCompIMU::Gyroscope IMU_getAngularVel() = 0;
 	virtual RoboCompIMU::DataImu IMU_getDataImu() = 0;
 	virtual RoboCompIMU::Magnetic IMU_getMagneticFields() = 0;
 	virtual RoboCompIMU::Orientation IMU_getOrientation() = 0;
 	virtual void IMU_resetImu() = 0;
+
 	virtual RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState) = 0;
 	virtual RoboCompLaser::LaserConfData Laser_getLaserConfData() = 0;
 	virtual RoboCompLaser::TLaserData Laser_getLaserData() = 0;
+
+	virtual RoboCompLidar3D::TColorCloudData Lidar3D_getColorCloudData() = 0;
 	virtual RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor) = 0;
 	virtual RoboCompLidar3D::TDataImage Lidar3D_getLidarDataArrayProyectedInImage(std::string name) = 0;
 	virtual RoboCompLidar3D::TDataCategory Lidar3D_getLidarDataByCategory(RoboCompLidar3D::TCategories categories, Ice::Long timestamp) = 0;
 	virtual RoboCompLidar3D::TData Lidar3D_getLidarDataProyectedInImage(std::string name) = 0;
 	virtual RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance, int decimationDegreeFactor) = 0;
+
 	virtual void OmniRobot_correctOdometer(int x, int z, float alpha) = 0;
 	virtual void OmniRobot_getBasePose(int &x, int &z, float &alpha) = 0;
 	virtual void OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state) = 0;
@@ -98,11 +103,15 @@ public:
 	virtual void OmniRobot_setOdometerPose(int x, int z, float alpha) = 0;
 	virtual void OmniRobot_setSpeedBase(float advx, float advz, float rot) = 0;
 	virtual void OmniRobot_stopBase() = 0;
+
 	virtual RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
 	virtual void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
+
 	virtual void Webots2Robocomp_resetWebots() = 0;
 	virtual void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path) = 0;
+
 	virtual void JoystickAdapter_sendData (RoboCompJoystickAdapter::TData data) = 0;
+
 
 protected:
 	std::unordered_map<std::string, std::unique_ptr<GRAFCETStep>> states;
@@ -119,6 +128,7 @@ public slots:
 	virtual void emergency() = 0;
 	virtual void restore() = 0;
 	void hibernationCheck();
+	void hibernationTick();
 	
 signals:
 	void kill();

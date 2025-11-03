@@ -23,13 +23,13 @@
 #include <Ice/Ice.h>
 #include <Webots2Robocomp.h>
 
-#include "genericworker.h"
+#include "../src/specificworker.h"
 
 
 class Webots2RobocompI : public virtual RoboCompWebots2Robocomp::Webots2Robocomp
 {
 public:
-	Webots2RobocompI(GenericWorker *_worker);
+	Webots2RobocompI(GenericWorker *_worker, const size_t id);
 	~Webots2RobocompI();
 
 	void resetWebots(const Ice::Current&);
@@ -38,6 +38,11 @@ public:
 private:
 
 	GenericWorker *worker;
+	size_t id;
+
+	// Array handlers for each method
+	std::array<std::function<void(void)>, 1> resetWebotsHandlers;
+	std::array<std::function<void(int, RoboCompGridder::TPath)>, 1> setPathToHumanHandlers;
 
 };
 

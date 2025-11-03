@@ -18,9 +18,24 @@
  */
 #include "camerargbdsimpleI.h"
 
-CameraRGBDSimpleI::CameraRGBDSimpleI(GenericWorker *_worker)
+CameraRGBDSimpleI::CameraRGBDSimpleI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
-	worker = _worker;
+	getAllHandlers = {
+		[this](auto a) { return worker->CameraRGBDSimple_getAll(a); }
+	};
+
+	getDepthHandlers = {
+		[this](auto a) { return worker->CameraRGBDSimple_getDepth(a); }
+	};
+
+	getImageHandlers = {
+		[this](auto a) { return worker->CameraRGBDSimple_getImage(a); }
+	};
+
+	getPointsHandlers = {
+		[this](auto a) { return worker->CameraRGBDSimple_getPoints(a); }
+	};
+
 }
 
 
@@ -31,21 +46,57 @@ CameraRGBDSimpleI::~CameraRGBDSimpleI()
 
 RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimpleI::getAll(std::string camera, const Ice::Current&)
 {
-	return worker->CameraRGBDSimple_getAll(camera);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getAllHandlers.size())
+		return  getAllHandlers[id](camera);
+	else
+		throw std::out_of_range("Invalid getAll id: " + std::to_string(id));
+
 }
 
 RoboCompCameraRGBDSimple::TDepth CameraRGBDSimpleI::getDepth(std::string camera, const Ice::Current&)
 {
-	return worker->CameraRGBDSimple_getDepth(camera);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getDepthHandlers.size())
+		return  getDepthHandlers[id](camera);
+	else
+		throw std::out_of_range("Invalid getDepth id: " + std::to_string(id));
+
 }
 
 RoboCompCameraRGBDSimple::TImage CameraRGBDSimpleI::getImage(std::string camera, const Ice::Current&)
 {
-	return worker->CameraRGBDSimple_getImage(camera);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getImageHandlers.size())
+		return  getImageHandlers[id](camera);
+	else
+		throw std::out_of_range("Invalid getImage id: " + std::to_string(id));
+
 }
 
 RoboCompCameraRGBDSimple::TPoints CameraRGBDSimpleI::getPoints(std::string camera, const Ice::Current&)
 {
-	return worker->CameraRGBDSimple_getPoints(camera);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getPointsHandlers.size())
+		return  getPointsHandlers[id](camera);
+	else
+		throw std::out_of_range("Invalid getPoints id: " + std::to_string(id));
+
 }
 

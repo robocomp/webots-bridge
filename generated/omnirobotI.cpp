@@ -18,9 +18,40 @@
  */
 #include "omnirobotI.h"
 
-OmniRobotI::OmniRobotI(GenericWorker *_worker)
+OmniRobotI::OmniRobotI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
-	worker = _worker;
+	correctOdometerHandlers = {
+		[this](auto a, auto b, auto c) { return worker->OmniRobot_correctOdometer(a, b, c); }
+	};
+
+	getBasePoseHandlers = {
+		[this](auto a, auto b, auto c) { return worker->OmniRobot_getBasePose(a, b, c); }
+	};
+
+	getBaseStateHandlers = {
+		[this](auto a) { return worker->OmniRobot_getBaseState(a); }
+	};
+
+	resetOdometerHandlers = {
+		[this]() { return worker->OmniRobot_resetOdometer(); }
+	};
+
+	setOdometerHandlers = {
+		[this](auto a) { return worker->OmniRobot_setOdometer(a); }
+	};
+
+	setOdometerPoseHandlers = {
+		[this](auto a, auto b, auto c) { return worker->OmniRobot_setOdometerPose(a, b, c); }
+	};
+
+	setSpeedBaseHandlers = {
+		[this](auto a, auto b, auto c) { return worker->OmniRobot_setSpeedBase(a, b, c); }
+	};
+
+	stopBaseHandlers = {
+		[this]() { return worker->OmniRobot_stopBase(); }
+	};
+
 }
 
 
@@ -31,41 +62,113 @@ OmniRobotI::~OmniRobotI()
 
 void OmniRobotI::correctOdometer(int x, int z, float alpha, const Ice::Current&)
 {
-	worker->OmniRobot_correctOdometer(x, z, alpha);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < correctOdometerHandlers.size())
+		 correctOdometerHandlers[id](x, z, alpha);
+	else
+		throw std::out_of_range("Invalid correctOdometer id: " + std::to_string(id));
+
 }
 
 void OmniRobotI::getBasePose(int &x, int &z, float &alpha, const Ice::Current&)
 {
-	worker->OmniRobot_getBasePose(x, z, alpha);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getBasePoseHandlers.size())
+		 getBasePoseHandlers[id](x, z, alpha);
+	else
+		throw std::out_of_range("Invalid getBasePose id: " + std::to_string(id));
+
 }
 
 void OmniRobotI::getBaseState(RoboCompGenericBase::TBaseState &state, const Ice::Current&)
 {
-	worker->OmniRobot_getBaseState(state);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getBaseStateHandlers.size())
+		 getBaseStateHandlers[id](state);
+	else
+		throw std::out_of_range("Invalid getBaseState id: " + std::to_string(id));
+
 }
 
 void OmniRobotI::resetOdometer(const Ice::Current&)
 {
-	worker->OmniRobot_resetOdometer();
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < resetOdometerHandlers.size())
+		 resetOdometerHandlers[id]();
+	else
+		throw std::out_of_range("Invalid resetOdometer id: " + std::to_string(id));
+
 }
 
 void OmniRobotI::setOdometer(RoboCompGenericBase::TBaseState state, const Ice::Current&)
 {
-	worker->OmniRobot_setOdometer(state);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < setOdometerHandlers.size())
+		 setOdometerHandlers[id](state);
+	else
+		throw std::out_of_range("Invalid setOdometer id: " + std::to_string(id));
+
 }
 
 void OmniRobotI::setOdometerPose(int x, int z, float alpha, const Ice::Current&)
 {
-	worker->OmniRobot_setOdometerPose(x, z, alpha);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < setOdometerPoseHandlers.size())
+		 setOdometerPoseHandlers[id](x, z, alpha);
+	else
+		throw std::out_of_range("Invalid setOdometerPose id: " + std::to_string(id));
+
 }
 
 void OmniRobotI::setSpeedBase(float advx, float advz, float rot, const Ice::Current&)
 {
-	worker->OmniRobot_setSpeedBase(advx, advz, rot);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < setSpeedBaseHandlers.size())
+		 setSpeedBaseHandlers[id](advx, advz, rot);
+	else
+		throw std::out_of_range("Invalid setSpeedBase id: " + std::to_string(id));
+
 }
 
 void OmniRobotI::stopBase(const Ice::Current&)
 {
-	worker->OmniRobot_stopBase();
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < stopBaseHandlers.size())
+		 stopBaseHandlers[id]();
+	else
+		throw std::out_of_range("Invalid stopBase id: " + std::to_string(id));
+
 }
 

@@ -1,6 +1,8 @@
-
 # This property is used by the clients to connect to IceStorm.
 Proxies.TopicManager = "IceStorm/TopicManager:default -p 9999"
+
+# Proxies for publishes interfaces
+Proxies.FullPoseEstimationPubPrefix = ""
 
 # Endpoints for implements interfaces
 Endpoints.Camera360RGB = "tcp -p 10098"
@@ -14,8 +16,9 @@ Endpoints.Webots2Robocomp = "tcp -p 10006"
 
 # Endpoints for subscriptions interfaces
 Endpoints.JoystickAdapterTopic = "tcp -p 11025"
+Endpoints.JoystickAdapterPrefix = ""
 
-Period.Compute = 100
+Period.Compute = 10
 Period.Emergency = 500
 
 Ice.Warn.Connections = "0"

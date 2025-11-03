@@ -23,13 +23,13 @@
 #include <Ice/Ice.h>
 #include <Laser.h>
 
-#include "genericworker.h"
+#include "../src/specificworker.h"
 
 
 class LaserI : public virtual RoboCompLaser::Laser
 {
 public:
-	LaserI(GenericWorker *_worker);
+	LaserI(GenericWorker *_worker, const size_t id);
 	~LaserI();
 
 	RoboCompLaser::TLaserData getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState, const Ice::Current&);
@@ -39,6 +39,12 @@ public:
 private:
 
 	GenericWorker *worker;
+	size_t id;
+
+	// Array handlers for each method
+	std::array<std::function<RoboCompLaser::TLaserData(RoboCompGenericBase::TBaseState)>, 1> getLaserAndBStateDataHandlers;
+	std::array<std::function<RoboCompLaser::LaserConfData(void)>, 1> getLaserConfDataHandlers;
+	std::array<std::function<RoboCompLaser::TLaserData(void)>, 1> getLaserDataHandlers;
 
 };
 

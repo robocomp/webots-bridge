@@ -23,13 +23,13 @@
 #include <Ice/Ice.h>
 #include <JoystickAdapter.h>
 
-#include "genericworker.h"
+#include "../src/specificworker.h"
 
 
 class JoystickAdapterI : public virtual RoboCompJoystickAdapter::JoystickAdapter
 {
 public:
-	JoystickAdapterI(GenericWorker *_worker);
+	JoystickAdapterI(GenericWorker *_worker, const size_t id);
 	~JoystickAdapterI();
 
 	void sendData(RoboCompJoystickAdapter::TData data, const Ice::Current&);
@@ -37,6 +37,10 @@ public:
 private:
 
 	GenericWorker *worker;
+	size_t id;
+
+	// Array handlers for each method
+	std::array<std::function<void(RoboCompJoystickAdapter::TData)>, 1> sendDataHandlers;
 
 };
 
