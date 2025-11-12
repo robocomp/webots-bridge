@@ -110,6 +110,9 @@ void SpecificWorker::initialize()
         }
         if(accelerometer) accelerometer->enable(this->getPeriod("Compute"));
         if(gyroscope) gyroscope->enable(this->getPeriod("Compute"));
+
+        // Controllable Door
+        controllableDoor = robot->getFromDef("CONTROLLABLE_DOOR");
     }
 }
 
@@ -971,6 +974,41 @@ void SpecificWorker::parseHumanObjects() {
         if(nodeDEF.find("HUMAN_") != std::string::npos)
             humanObjects[i].node = childrenField->getMFNode(i);
     }
+}
+
+void SpecificWorker::setDoorAperture(float _aperture) {
+
+    std::cout << "[Warning] aperture value " << _aperture << std::endl;
+
+    // Check if the door node is available
+    if (!controllableDoor) {
+        std::cerr << "[Error] controllableDoor is not initialized.\n";
+        return;
+    }
+
+    // Clamp the input value to the range [-pi, 0]
+    float minAperture = -static_cast<float>(M_PI);
+    float maxAperture = 0.0f;
+
+    if (_aperture < minAperture || _aperture > maxAperture) {
+        std::cout << "[Warning] The aperture value " << _aperture
+                  << " is out of the allowed range ["
+                  << minAperture << ", " << maxAperture
+                  << "]. It will be clamped automatically.\n";
+    }
+
+    float aperture = std::clamp(_aperture, minAperture, maxAperture);
+
+    // Get the "position" field of the door node
+    webots::Field *positionField = controllableDoor->getField("position");
+    if (!positionField) {
+        std::cerr << "[Error] 'position' field not found in the door node.\n";
+        return;
+    }
+
+    // Set the door position
+    positionField->setSFFloat(aperture);
+    std::cout << "[Info] Door aperture set to " << aperture << " rad.\n";
 }
 
 

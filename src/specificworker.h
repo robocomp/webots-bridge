@@ -169,6 +169,7 @@ private:
     webots::PositionSensor *ps[4];
     webots::Accelerometer* accelerometer;
     webots::Gyro* gyroscope;
+	webots::Node* controllableDoor;
 
     void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp);
     void receiving_cameraRGBData(webots::Camera* _camera, double timestamp);
@@ -231,6 +232,7 @@ private:
     Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
     std::tuple<float, float, float> rotationMatrixToEulerZYX(const double* R);
 
+	void setDoorAperture(float _aperture);
 };
 
 #endif
