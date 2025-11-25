@@ -22,8 +22,7 @@
 
 SpecificWorker::SpecificWorker(const ConfigLoader& configLoader, TuplePrx tprx, bool startup_check) : GenericWorker(configLoader, tprx)
 {
-
-	this->startup_check_flag = startup_check;
+this->startup_check_flag = startup_check;
 	if(this->startup_check_flag)
 	{
 		this->startup_check();
@@ -34,9 +33,22 @@ SpecificWorker::SpecificWorker(const ConfigLoader& configLoader, TuplePrx tprx, 
 			hibernationChecker.start(500);
 		#endif
 
+		
+		// Example statemachine:
+		/***
+		//Your definition for the statesmachine (if you dont want use a execute function, use nullptr)
+		states["CustomState"] = std::make_unique<GRAFCETStep>("CustomState", period, 
+															std::bind(&SpecificWorker::customLoop, this),  // Cyclic function
+															std::bind(&SpecificWorker::customEnter, this), // On-enter function
+															std::bind(&SpecificWorker::customExit, this)); // On-exit function
 
+		//Add your definition of transitions (addTransition(originOfSignal, signal, dstState))
+		states["CustomState"]->addTransition(states["CustomState"].get(), SIGNAL(entered()), states["OtherState"].get());
+		states["Compute"]->addTransition(this, SIGNAL(customSignal()), states["CustomState"].get()); //Define your signal in the .h file under the "Signals" section.
 
-		//Your states for machine HERE EXAMPLE
+		//Add your custom state
+		statemachine.addState(states["CustomState"].get());
+		***/
 
 		statemachine.setChildMode(QState::ExclusiveStates);
 		statemachine.start();
@@ -46,11 +58,8 @@ SpecificWorker::SpecificWorker(const ConfigLoader& configLoader, TuplePrx tprx, 
 			qWarning() << error;
 			throw error;
 		}
-
+		
 	}
-	// Uncomment if there's too many debug messages
-	// but it removes the possibility to see the messages
-	// shown in the console with qDebug()
 }
 
 SpecificWorker::~SpecificWorker()
@@ -128,7 +137,7 @@ void SpecificWorker::compute()
     if(range_finder) receiving_depthImageData(range_finder, now);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
 
-//    robot->step(this->Period);
+//    robot->step(getPeriod("Compute"));
 
     robot->step(1);
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
@@ -205,7 +214,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     newImage360.height = _camera1->getHeight();
 
     // Establecer el periodo de refresco de la imagen en milisegundos.
-//    newImage360.period = this->Period;
+//    newImage360.period = getPeriod("Compute");
 
     // Establecer el periodo real del compute de refresco de la imagen en milisegundos.
     newImage360.period = fps.get_period();
@@ -249,7 +258,7 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double tim
     rt_rotation_matrix << cos(orientation), -sin(orientation),
             sin(orientation), cos(orientation);
 
-    // Multiply the velocity vector by the inverse of the rotation matrix to get the velocity in the robot reference system
+    // Multiply the velocity std::vector by the inverse of the rotation matrix to get the velocity in the robot reference system
     Eigen::Vector2f shadow_velocity_2d(shadow_velocity[1], shadow_velocity[0]);
     Eigen::Vector2f rt_rotation_matrix_inv = rt_rotation_matrix.inverse() * shadow_velocity_2d;
 
@@ -294,7 +303,7 @@ double SpecificWorker::generate_noise(double stddev)
     return d(gen);
 }
 
-void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp)
+void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp)
 {
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
@@ -397,7 +406,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double tim
     RoboCompCameraRGBDSimple::TImage newImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
-//    newImage.period = this->Period;
+//    newImage.period = getPeriod("Compute");
     newImage.period = fps.get_period();
 
     // Timestamp calculation
@@ -412,7 +421,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double tim
 
     const unsigned char* webotsImageData = _camera->getImage();
 
-    // Crear un vector para la nueva imagen RGB.
+    // Crear un std::vector para la nueva imagen RGB.
     std::vector<unsigned char> rgbImage;
     rgbImage.reserve(3 * newImage.width * newImage.height);  // Reservar espacio para RGB
 
@@ -425,7 +434,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double tim
             unsigned char g = _camera->imageGetGreen(webotsImageData, newImage.width, x, y);
             unsigned char b = _camera->imageGetBlue(webotsImageData, newImage.width, x, y);
 
-            // Añadir los canales al vector BGR final.
+            // Añadir los canales al std::vector BGR final.
             rgbImage.push_back(b);
             rgbImage.push_back(g);
             rgbImage.push_back(r);
@@ -463,7 +472,7 @@ void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder,
         // Este es el factor de escala a aplicar.
         float scaledValue = webotsDepthData[i] * 10;
 
-        // Convertimos de float a array de bytes.
+        // Convertimos de float a std::array de bytes.
         unsigned char singleElement[sizeof(float)];
         memcpy(singleElement, &scaledValue, sizeof(float));
 
@@ -573,7 +582,7 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
     }
     else
     {
-        cout << "Getting data from a not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
+        std::cout << "Getting data from a not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << std::endl;
         return RoboCompLidar3D::TData();
     }
 }
@@ -758,7 +767,7 @@ void SpecificWorker::moveHumanToNextTarget(int humanId)
         if(currentTarget.norm() < 0.3)
             humanObjects[humanId].path.erase(humanObjects[humanId].path.begin());
 
-        //Print currentTarget vector values
+        //Print currentTarget std::vector values
         qInfo() << "TARGET:" << currentTarget.x() << currentTarget.y() << currentTarget.z();
 
         currentTarget.normalize();
@@ -766,7 +775,7 @@ void SpecificWorker::moveHumanToNextTarget(int humanId)
         velocity[0] = currentTarget.x();
         velocity[1] = currentTarget.y();
         velocity[2] = 0.f;
-        //Print velocity vector values
+        //Print velocity std::vector values
         qInfo() << "SPEED:" << velocity[0] << velocity[1] << velocity[2];
 
     }
@@ -823,6 +832,11 @@ void SpecificWorker::Webots2Robocomp_resetWebots()
 
 }
 
+void SpecificWorker::Webots2Robocomp_setDoorAngle(float angle)
+{
+	setDoorAperture(angle);
+}
+
 #pragma endregion Webots2Robocomp Methods
 
 #pragma region JoystickAdapter
@@ -833,13 +847,13 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
     // Declaration of the structure to be filled
     float side=0, adv=0, rot=0;
     /*
-    // Iterate through the list of buttons in the data structure
+    // Iterate through the std::list of buttons in the data structure
     for (RoboCompJoystickAdapter::ButtonParams button : data.buttons) {
         // Currently does nothing with the buttons
     }
     */
 
-    // Iterate through the list of axes in the data structure
+    // Iterate through the std::list of axes in the data structure
     for (RoboCompJoystickAdapter::AxisParams axis : data.axes)
     {
         // Process the axis according to its name
@@ -850,7 +864,7 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
         else if (axis.name == "side")
             side = axis.value;
         else
-            cout << "[ JoystickAdapter ] Warning: Using a non-defined axes (" << axis.name << ")." << endl;
+            std::cout << "[ JoystickAdapter ] Warning: Using a non-defined axes (" << axis.name << ")." << std::endl;
     }
     if(pars.do_joystick)
         OmniRobot_setSpeedBase(side, adv, rot);
@@ -938,9 +952,9 @@ void SpecificWorker::IMU_resetImu()
 
 #pragma endregion IMU
 
-void SpecificWorker::printNotImplementedWarningMessage(string functionName)
+void SpecificWorker::printNotImplementedWarningMessage(std::string functionName)
 {
-    cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
+    std::cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
 }
 
 Matrix4d SpecificWorker::create_affine_matrix(double a, double b, double c, Vector3d trans)

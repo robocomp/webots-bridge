@@ -116,6 +116,7 @@ public:
 	void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects);
 	void Webots2Robocomp_resetWebots();
 	void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
+	void Webots2Robocomp_setDoorAngle(float angle);
 
 	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
@@ -233,6 +234,9 @@ private:
     std::tuple<float, float, float> rotationMatrixToEulerZYX(const double* R);
 
 	void setDoorAperture(float _aperture);
+
+signals:
+        //void customSignal();
 };
 
 #endif
