@@ -20,13 +20,9 @@
 
 #pragma region Robocomp Methods
 
-/**
-* \brief Default constructor
-*/
 SpecificWorker::SpecificWorker(const ConfigLoader& configLoader, TuplePrx tprx, bool startup_check) : GenericWorker(configLoader, tprx)
 {
-
-	this->startup_check_flag = startup_check;
+this->startup_check_flag = startup_check;
 	if(this->startup_check_flag)
 	{
 		this->startup_check();
@@ -37,9 +33,22 @@ SpecificWorker::SpecificWorker(const ConfigLoader& configLoader, TuplePrx tprx, 
 			hibernationChecker.start(500);
 		#endif
 
+		
+		// Example statemachine:
+		/***
+		//Your definition for the statesmachine (if you dont want use a execute function, use nullptr)
+		states["CustomState"] = std::make_unique<GRAFCETStep>("CustomState", period, 
+															std::bind(&SpecificWorker::customLoop, this),  // Cyclic function
+															std::bind(&SpecificWorker::customEnter, this), // On-enter function
+															std::bind(&SpecificWorker::customExit, this)); // On-exit function
 
+		//Add your definition of transitions (addTransition(originOfSignal, signal, dstState))
+		states["CustomState"]->addTransition(states["CustomState"].get(), SIGNAL(entered()), states["OtherState"].get());
+		states["Compute"]->addTransition(this, SIGNAL(customSignal()), states["CustomState"].get()); //Define your signal in the .h file under the "Signals" section.
 
-		//Your states for machine HERE EXAMPLE
+		//Add your custom state
+		statemachine.addState(states["CustomState"].get());
+		***/
 
 		statemachine.setChildMode(QState::ExclusiveStates);
 		statemachine.start();
@@ -49,16 +58,10 @@ SpecificWorker::SpecificWorker(const ConfigLoader& configLoader, TuplePrx tprx, 
 			qWarning() << error;
 			throw error;
 		}
-
+		
 	}
-	// Uncomment if there's too many debug messages
-	// but it removes the possibility to see the messages
-	// shown in the console with qDebug()
 }
 
-/**
-* \brief Default destructor
-*/
 SpecificWorker::~SpecificWorker()
 {
 	std::cout << "Destroying SpecificWorker" << std::endl;
@@ -70,7 +73,6 @@ SpecificWorker::~SpecificWorker()
 void SpecificWorker::initialize()
 {
     std::cout << "Initialize worker" << std::endl;
-    this->setPeriod("Compute",TIME_STEP);
     if(this->startup_check_flag)
     {
         this->startup_check();
@@ -82,7 +84,6 @@ void SpecificWorker::initialize()
 
         robot = new webots::Supervisor();
         robotNode = robot->getFromDef("shadow");
-
 
         // Inicializa los motores y los sensores de posición.
         const char *motorNames[4] = {"wheel2", "wheel1", "wheel4", "wheel3"};
@@ -122,7 +123,8 @@ void SpecificWorker::initialize()
         if (zedRangeFinder) zedRangeFinder->enable(this->getPeriod("Compute"));
         if (zed) zed->enable(this->getPeriod("Compute"));
 
-        this->setPeriod("Compute", 10);
+        // Controllable Door
+        controllableDoor = robot->getFromDef("CONTROLLABLE_DOOR");
     }
 }
 
@@ -140,7 +142,7 @@ void SpecificWorker::compute()
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
     if(zedRangeFinder && zed) receiving_cameraRGBD(zed, zedRangeFinder, zedImage, now);
 
-//    robot->step(this->Period);
+//    robot->step(getPeriod("Compute"));
 
     robot->step(1);
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
@@ -271,11 +273,6 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
 
 void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, double timestamp)
 {
-
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
     RoboCompCamera360RGB::TImage newImage360;
 
     // Aseguramos de que ambas cámaras tienen la misma resolución, de lo contrario, deberás manejar las diferencias.
@@ -296,7 +293,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     newImage360.height = _camera1->getHeight();
 
     // Establecer el periodo de refresco de la imagen en milisegundos.
-//    newImage360.period = this->Period;
+//    newImage360.period = getPeriod("Compute");
 
     // Establecer el periodo real del compute de refresco de la imagen en milisegundos.
     newImage360.period = fps.get_period();
@@ -340,7 +337,7 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double tim
     rt_rotation_matrix << cos(orientation), -sin(orientation),
             sin(orientation), cos(orientation);
 
-    // Multiply the velocity vector by the inverse of the rotation matrix to get the velocity in the robot reference system
+    // Multiply the velocity std::vector by the inverse of the rotation matrix to get the velocity in the robot reference system
     Eigen::Vector2f shadow_velocity_2d(shadow_velocity[1], shadow_velocity[0]);
     Eigen::Vector2f rt_rotation_matrix_inv = rt_rotation_matrix.inverse() * shadow_velocity_2d;
 
@@ -385,12 +382,8 @@ double SpecificWorker::generate_noise(double stddev)
     return d(gen);
 }
 
-void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp)
+void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
     const float *rangeImage = _lidar->getRangeImage();
@@ -489,13 +482,10 @@ void SpecificWorker::receiving_lidarData(string name, webots::Lidar* _lidar, Dou
 }
 void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double timestamp)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     RoboCompCameraRGBDSimple::TImage newImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
-//    newImage.period = this->Period;
+//    newImage.period = getPeriod("Compute");
     newImage.period = fps.get_period();
 
     // Timestamp calculation
@@ -510,7 +500,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double tim
 
     const unsigned char* webotsImageData = _camera->getImage();
 
-    // Crear un vector para la nueva imagen RGB.
+    // Crear un std::vector para la nueva imagen RGB.
     std::vector<unsigned char> rgbImage;
     rgbImage.reserve(3 * newImage.width * newImage.height);  // Reservar espacio para RGB
 
@@ -523,7 +513,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double tim
             unsigned char g = _camera->imageGetGreen(webotsImageData, newImage.width, x, y);
             unsigned char b = _camera->imageGetBlue(webotsImageData, newImage.width, x, y);
 
-            // Añadir los canales al vector BGR final.
+            // Añadir los canales al std::vector BGR final.
             rgbImage.push_back(b);
             rgbImage.push_back(g);
             rgbImage.push_back(r);
@@ -539,10 +529,6 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double tim
 }
 void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder, double timestamp)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
     RoboCompCameraRGBDSimple::TDepth newDepthImage;
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
@@ -565,7 +551,7 @@ void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder,
         // Este es el factor de escala a aplicar.
         float scaledValue = webotsDepthData[i] * 10;
 
-        // Convertimos de float a array de bytes.
+        // Convertimos de float a std::array de bytes.
         unsigned char singleElement[sizeof(float)];
         memcpy(singleElement, &scaledValue, sizeof(float));
 
@@ -584,9 +570,6 @@ void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder,
 
 RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     if(pars.delay)
     {
@@ -603,10 +586,6 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
 
 RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::string camera)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
     last_read.store(std::chrono::high_resolution_clock::now());
     RoboCompCameraRGBDSimple::TRGBD newRGBD;
 
@@ -619,9 +598,6 @@ RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::str
 
 RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::string camera)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     return this->depthImage;
 }
@@ -642,36 +618,30 @@ RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std
 
 RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     return laserData;
 }
 
 RoboCompLaser::LaserConfData SpecificWorker::Laser_getLaserConfData()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     return laserDataConf;
 }
 
 RoboCompLaser::TLaserData SpecificWorker::Laser_getLaserData()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     return laserData;
+}
+RoboCompLidar3D::TColorCloudData SpecificWorker::Lidar3D_getColorCloudData()
+{
+	RoboCompLidar3D::TColorCloudData ret{};
+    printNotImplementedWarningMessage(__FUNCTION__);
+	return ret;
 }
 
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     if(name == "helios") {
         if(pars.delay && helios_delay_queue.full())
@@ -688,16 +658,13 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
     }
     else
     {
-        cout << "Getting data from a not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << endl;
+        std::cout << "Getting data from a not implemented lidar (" << name << "). Try 'helios' or 'pearl' instead." << std::endl;
         return RoboCompLidar3D::TData();
     }
 }
 
 RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance, int decimationDegreeFactor)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("Lidar3D_getLidarDataWithThreshold2d");
     return RoboCompLidar3D::TData();
@@ -705,20 +672,13 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataWithThreshold2d(std::
 
 RoboCompLidar3D::TDataCategory SpecificWorker::Lidar3D_getLidarDataByCategory(RoboCompLidar3D::TCategories categories, Ice::Long timestamp)
 {
-	#ifdef HIBERNATION_ENABLED
-		hibernation = true;
-	#endif
 	RoboCompLidar3D::TDataCategory ret{};
-	//implementCODE
-
+    printNotImplementedWarningMessage(__FUNCTION__);
 	return ret;
 }
 
 RoboCompLidar3D::TDataImage SpecificWorker::Lidar3D_getLidarDataArrayProyectedInImage(std::string name)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("Lidar3D_getLidarDataArrayProyectedInImage");
     return RoboCompLidar3D::TDataImage();
@@ -735,14 +695,6 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataProyectedInImage(std:
     return ret;
 }
 
-RoboCompLidar3D::TColorCloudData SpecificWorker::Lidar3D_getColorCloudData()
-{
-        RoboCompLidar3D::TColorCloudData ret{};
-        //implementCODE
-
-        return ret;
-}
-
 
 #pragma endregion Lidar
 
@@ -750,27 +702,18 @@ RoboCompLidar3D::TColorCloudData SpecificWorker::Lidar3D_getColorCloudData()
 
 void SpecificWorker::OmniRobot_correctOdometer(int x, int z, float alpha)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_correctOdometer");
 }
 
 void SpecificWorker::OmniRobot_getBasePose(int &x, int &z, float &alpha)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_getBasePose");
 }
 
 void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &state)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
 
     state.x = robotNode->getField("translation")->getSFVec3f()[0];
@@ -780,36 +723,24 @@ void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &sta
 
 void SpecificWorker::OmniRobot_resetOdometer()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_resetOdometer");
 }
 
 void SpecificWorker::OmniRobot_setOdometer(RoboCompGenericBase::TBaseState state)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_setOdometer");
 }
 
 void SpecificWorker::OmniRobot_setOdometerPose(int x, int z, float alpha)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     printNotImplementedWarningMessage("OmniRobot_setOdometerPose");
 }
 
 void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     double speeds[4];
 
@@ -829,9 +760,6 @@ void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
 
 void SpecificWorker::OmniRobot_stopBase()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     for (int i = 0; i < 4; i++)
     {
@@ -845,9 +773,6 @@ void SpecificWorker::OmniRobot_stopBase()
 
 RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     RoboCompVisualElements::TObjects objectsList;
 
@@ -869,9 +794,6 @@ RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects
 }
 void SpecificWorker::VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     last_read.store(std::chrono::high_resolution_clock::now());
     // Implement CODE
 }
@@ -882,10 +804,6 @@ void SpecificWorker::VisualElements_setVisualObjects(RoboCompVisualElements::TOb
 
 void SpecificWorker::humansMovement()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
     if(!humanObjects.empty())
         for (auto& human : humanObjects)
         {
@@ -899,10 +817,6 @@ void SpecificWorker::humansMovement()
 
 void SpecificWorker::moveHumanToNextTarget(int humanId)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
     webots::Node *humanNode = humanObjects[humanId].node;
 
     if(humanNode == nullptr)
@@ -930,7 +844,7 @@ void SpecificWorker::moveHumanToNextTarget(int humanId)
         if(currentTarget.norm() < 0.3)
             humanObjects[humanId].path.erase(humanObjects[humanId].path.begin());
 
-        //Print currentTarget vector values
+        //Print currentTarget std::vector values
         qInfo() << "TARGET:" << currentTarget.x() << currentTarget.y() << currentTarget.z();
 
         currentTarget.normalize();
@@ -938,7 +852,7 @@ void SpecificWorker::moveHumanToNextTarget(int humanId)
         velocity[0] = currentTarget.x();
         velocity[1] = currentTarget.y();
         velocity[2] = 0.f;
-        //Print velocity vector values
+        //Print velocity std::vector values
         qInfo() << "SPEED:" << velocity[0] << velocity[1] << velocity[2];
 
     }
@@ -948,10 +862,6 @@ void SpecificWorker::moveHumanToNextTarget(int humanId)
 
 void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
     //static bool overwrite_path = false;
 
     if(humanObjects[humanId].node == nullptr)
@@ -995,12 +905,13 @@ void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder
 
 void SpecificWorker::Webots2Robocomp_resetWebots()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
 //implementCODE
 
+}
+
+void SpecificWorker::Webots2Robocomp_setDoorAngle(float angle)
+{
+	setDoorAperture(angle);
 }
 
 #pragma endregion Webots2Robocomp Methods
@@ -1010,20 +921,16 @@ void SpecificWorker::Webots2Robocomp_resetWebots()
 //SUBSCRIPTION to sendData method from JoystickAdapter interface
 void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
     // Declaration of the structure to be filled
     float side=0, adv=0, rot=0;
     /*
-    // Iterate through the list of buttons in the data structure
+    // Iterate through the std::list of buttons in the data structure
     for (RoboCompJoystickAdapter::ButtonParams button : data.buttons) {
         // Currently does nothing with the buttons
     }
     */
 
-    // Iterate through the list of axes in the data structure
+    // Iterate through the std::list of axes in the data structure
     for (RoboCompJoystickAdapter::AxisParams axis : data.axes)
     {
         // Process the axis according to its name
@@ -1034,7 +941,7 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
         else if (axis.name == "side")
             side = axis.value;
         else
-            cout << "[ JoystickAdapter ] Warning: Using a non-defined axes (" << axis.name << ")." << endl;
+            std::cout << "[ JoystickAdapter ] Warning: Using a non-defined axes (" << axis.name << ")." << std::endl;
     }
     if(pars.do_joystick)
         OmniRobot_setSpeedBase(side, adv, rot);
@@ -1046,9 +953,6 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 
 RoboCompIMU::Acceleration SpecificWorker::IMU_getAcceleration()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     const double* accelerometerValues = accelerometer->getValues();
     RoboCompIMU::Acceleration ret{
             (float)accelerometerValues[0],
@@ -1061,42 +965,27 @@ RoboCompIMU::Acceleration SpecificWorker::IMU_getAcceleration()
 
 RoboCompIMU::Gyroscope SpecificWorker::IMU_getAngularVel()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     RoboCompIMU::Gyroscope ret{};
-    //implementCODE
-
+    printNotImplementedWarningMessage(__FUNCTION__);
     return ret;
 }
 
 RoboCompIMU::DataImu SpecificWorker::IMU_getDataImu()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     RoboCompIMU::DataImu ret{};
-    //implementCODE
-
+    printNotImplementedWarningMessage(__FUNCTION__);
     return ret;
 }
 
 RoboCompIMU::Magnetic SpecificWorker::IMU_getMagneticFields()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     RoboCompIMU::Magnetic ret{};
-    //implementCODE
-
+    printNotImplementedWarningMessage(__FUNCTION__);
     return ret;
 }
 
 RoboCompIMU::Orientation SpecificWorker::IMU_getOrientation()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     auto orientation = robotNode->getOrientation();
     auto [roll, pitch, yaw] = rotationMatrixToEulerZYX(orientation);
 
@@ -1135,28 +1024,18 @@ std::tuple<float, float, float> SpecificWorker::rotationMatrixToEulerZYX(const d
 
 void SpecificWorker::IMU_resetImu()
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
+    printNotImplementedWarningMessage(__FUNCTION__);
 }
 
 #pragma endregion IMU
 
-void SpecificWorker::printNotImplementedWarningMessage(string functionName)
+void SpecificWorker::printNotImplementedWarningMessage(std::string functionName)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-
-    cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
+    std::cout << "Function not implemented used: " << "[" << functionName << "]" << std::endl;
 }
 
 Matrix4d SpecificWorker::create_affine_matrix(double a, double b, double c, Vector3d trans)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
 
     Transform<double, 3, Eigen::Affine> t;
     t = Translation<double, 3>(trans);
@@ -1167,9 +1046,6 @@ Matrix4d SpecificWorker::create_affine_matrix(double a, double b, double c, Vect
 }
 
 void SpecificWorker::parseHumanObjects() {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
     webots::Node* crowdNode = robot->getFromDef("CROWD");
     if(!crowdNode){
 
@@ -1189,6 +1065,41 @@ void SpecificWorker::parseHumanObjects() {
         if(nodeDEF.find("HUMAN_") != std::string::npos)
             humanObjects[i].node = childrenField->getMFNode(i);
     }
+}
+
+void SpecificWorker::setDoorAperture(float _aperture) {
+
+    std::cout << "[Warning] aperture value " << _aperture << std::endl;
+
+    // Check if the door node is available
+    if (!controllableDoor) {
+        std::cerr << "[Error] controllableDoor is not initialized.\n";
+        return;
+    }
+
+    // Clamp the input value to the range [-pi, 0]
+    float minAperture = -static_cast<float>(M_PI);
+    float maxAperture = 0.0f;
+
+    if (_aperture < minAperture || _aperture > maxAperture) {
+        std::cout << "[Warning] The aperture value " << _aperture
+                  << " is out of the allowed range ["
+                  << minAperture << ", " << maxAperture
+                  << "]. It will be clamped automatically.\n";
+    }
+
+    float aperture = std::clamp(_aperture, minAperture, maxAperture);
+
+    // Get the "position" field of the door node
+    webots::Field *positionField = controllableDoor->getField("position");
+    if (!positionField) {
+        std::cerr << "[Error] 'position' field not found in the door node.\n";
+        return;
+    }
+
+    // Set the door position
+    positionField->setSFFloat(aperture);
+    std::cout << "[Info] Door aperture set to " << aperture << " rad.\n";
 }
 
 
@@ -1228,6 +1139,7 @@ void SpecificWorker::parseHumanObjects() {
 // RoboCompLidar3D::TDataImage
 // RoboCompLidar3D::TData
 // RoboCompLidar3D::TDataCategory
+// RoboCompLidar3D::TColorCloudData
 
 /**************************************/
 // From the RoboCompOmniRobot you can use this types:

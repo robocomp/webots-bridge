@@ -33,6 +33,7 @@ public:
 	~Webots2RobocompI();
 
 	void resetWebots(const Ice::Current&);
+	void setDoorAngle(float angle, const Ice::Current&);
 	void setPathToHuman(int humanId, RoboCompGridder::TPath path, const Ice::Current&);
 
 private:
@@ -42,6 +43,7 @@ private:
 
 	// Array handlers for each method
 	std::array<std::function<void(void)>, 1> resetWebotsHandlers;
+	std::array<std::function<void(float)>, 1> setDoorAngleHandlers;
 	std::array<std::function<void(int, RoboCompGridder::TPath)>, 1> setPathToHumanHandlers;
 
 };

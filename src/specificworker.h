@@ -27,6 +27,7 @@
 #ifndef SPECIFICWORKER_H
 #define SPECIFICWORKER_H
 
+// If you want to reduce the period automatically due to lack of use, you must uncomment the following line
 #define HIBERNATION_ENABLED
 
 #include <genericworker.h>
@@ -58,11 +59,24 @@ using namespace std;
 #define LX 0.135  // longitudinal distance from robot's COM to wheel [m].
 #define LY 0.237  // lateral distance from robot's COM to wheel [m].
 
+/**
+ * \brief Class SpecificWorker implements the core functionality of the component.
+ */
 class SpecificWorker : public GenericWorker
 {
 Q_OBJECT
 public:
+    /**
+     * \brief Constructor for SpecificWorker.
+     * \param configLoader Configuration loader for the component.
+     * \param tprx Tuple of proxies required for the component.
+     * \param startup_check Indicates whether to perform startup checks.
+     */
 	SpecificWorker(const ConfigLoader& configLoader, TuplePrx tprx, bool startup_check);
+
+	/**
+     * \brief Destructor for SpecificWorker.
+     */
 	~SpecificWorker();
 
 	RoboCompCamera360RGB::TImage Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight);
@@ -81,12 +95,14 @@ public:
 	RoboCompLaser::TLaserData Laser_getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState);
 	RoboCompLaser::LaserConfData Laser_getLaserConfData();
 	RoboCompLaser::TLaserData Laser_getLaserData();
+
+	RoboCompLidar3D::TColorCloudData Lidar3D_getColorCloudData();
 	RoboCompLidar3D::TData Lidar3D_getLidarData(std::string name, float start, float len, int decimationDegreeFactor);
 	RoboCompLidar3D::TDataImage Lidar3D_getLidarDataArrayProyectedInImage(std::string name);
 	RoboCompLidar3D::TDataCategory Lidar3D_getLidarDataByCategory(RoboCompLidar3D::TCategories categories, Ice::Long timestamp);
 	RoboCompLidar3D::TData Lidar3D_getLidarDataProyectedInImage(std::string name);
 	RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance, int decimationDegreeFactor);
-        RoboCompLidar3D::TColorCloudData Lidar3D_getColorCloudData();
+
 
 	void OmniRobot_correctOdometer(int x, int z, float alpha);
 	void OmniRobot_getBasePose(int &x, int &z, float &alpha);
@@ -101,16 +117,42 @@ public:
 	void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects);
 	void Webots2Robocomp_resetWebots();
 	void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
+	void Webots2Robocomp_setDoorAngle(float angle);
 
 	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
 public slots:
+
+	/**
+	 * \brief Initializes the worker one time.
+	 */
 	void initialize();
+
+	/**
+	 * \brief Main compute loop of the worker.
+	 */
 	void compute();
+
+	/**
+	 * \brief Handles the emergency state loop.
+	 */
 	void emergency();
+
+	/**
+	 * \brief Restores the component from an emergency state.
+	 */
 	void restore();
+
+    /**
+     * \brief Performs startup checks for the component.
+     * \return An integer representing the result of the checks.
+     */
 	int startup_check();
 private:
+
+	/**
+     * \brief Flag indicating whether startup checks are enabled.
+     */
 	bool startup_check_flag;
 
     FPSCounter fps;
@@ -131,6 +173,7 @@ private:
     webots::Gyro* gyroscope;
 	webots::Camera* zed;
 	webots::RangeFinder* zedRangeFinder;
+	webots::Node* controllableDoor;
 
     void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp);
     void receiving_cameraRGBData(webots::Camera* _camera, double timestamp);
@@ -198,6 +241,10 @@ private:
     Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
     std::tuple<float, float, float> rotationMatrixToEulerZYX(const double* R);
 
+	void setDoorAperture(float _aperture);
+
+signals:
+        //void customSignal();
 };
 
 #endif

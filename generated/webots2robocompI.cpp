@@ -24,6 +24,10 @@ Webots2RobocompI::Webots2RobocompI(GenericWorker *_worker, const size_t id): wor
 		[this]() { return worker->Webots2Robocomp_resetWebots(); }
 	};
 
+	setDoorAngleHandlers = {
+		[this](auto a) { return worker->Webots2Robocomp_setDoorAngle(a); }
+	};
+
 	setPathToHumanHandlers = {
 		[this](auto a, auto b) { return worker->Webots2Robocomp_setPathToHuman(a, b); }
 	};
@@ -48,6 +52,20 @@ void Webots2RobocompI::resetWebots(const Ice::Current&)
 	else
 		throw std::out_of_range("Invalid resetWebots id: " + std::to_string(id));
 
+}
+
+void Webots2RobocompI::setDoorAngle(float angle, const Ice::Current&)
+{
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < setDoorAngleHandlers.size())
+		 setDoorAngleHandlers[id](angle);
+	else
+		throw std::out_of_range("Invalid setDoorAngle id: " + std::to_string(id));
+	
 }
 
 void Webots2RobocompI::setPathToHuman(int humanId, RoboCompGridder::TPath path, const Ice::Current&)
