@@ -23,15 +23,16 @@
 #include <Ice/Ice.h>
 #include <Lidar3D.h>
 
-#include "genericworker.h"
+#include "../src/specificworker.h"
 
 
 class Lidar3DI : public virtual RoboCompLidar3D::Lidar3D
 {
 public:
-	Lidar3DI(GenericWorker *_worker);
+	Lidar3DI(GenericWorker *_worker, const size_t id);
 	~Lidar3DI();
 
+	RoboCompLidar3D::TColorCloudData getColorCloudData(const Ice::Current&);
 	RoboCompLidar3D::TData getLidarData(std::string name, float start, float len, int decimationDegreeFactor, const Ice::Current&);
 	RoboCompLidar3D::TDataImage getLidarDataArrayProyectedInImage(std::string name, const Ice::Current&);
 	RoboCompLidar3D::TDataCategory getLidarDataByCategory(RoboCompLidar3D::TCategories categories, Ice::Long timestamp, const Ice::Current&);
@@ -41,6 +42,15 @@ public:
 private:
 
 	GenericWorker *worker;
+	size_t id;
+
+	// Array handlers for each method
+	std::array<std::function<RoboCompLidar3D::TColorCloudData(void)>, 1> getColorCloudDataHandlers;
+	std::array<std::function<RoboCompLidar3D::TData(std::string, float, float, int)>, 1> getLidarDataHandlers;
+	std::array<std::function<RoboCompLidar3D::TDataImage(std::string)>, 1> getLidarDataArrayProyectedInImageHandlers;
+	std::array<std::function<RoboCompLidar3D::TDataCategory(RoboCompLidar3D::TCategories, Ice::Long)>, 1> getLidarDataByCategoryHandlers;
+	std::array<std::function<RoboCompLidar3D::TData(std::string)>, 1> getLidarDataProyectedInImageHandlers;
+	std::array<std::function<RoboCompLidar3D::TData(std::string, float, int)>, 1> getLidarDataWithThreshold2dHandlers;
 
 };
 

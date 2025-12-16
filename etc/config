@@ -14,6 +14,10 @@ Endpoints.Webots2Robocomp = "tcp -p 10006"
 
 # Endpoints for subscriptions interfaces
 Endpoints.JoystickAdapterTopic = "tcp -p 11025"
+Endpoints.JoystickAdapterPrefix = ""
+
+# Proxies for publishes interfaces
+Proxies.FullPoseEstimationPubPrefix = ""
 
 Period.Compute = 100
 Period.Emergency = 500

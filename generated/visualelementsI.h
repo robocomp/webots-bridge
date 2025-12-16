@@ -23,13 +23,13 @@
 #include <Ice/Ice.h>
 #include <VisualElements.h>
 
-#include "genericworker.h"
+#include "../src/specificworker.h"
 
 
 class VisualElementsI : public virtual RoboCompVisualElements::VisualElements
 {
 public:
-	VisualElementsI(GenericWorker *_worker);
+	VisualElementsI(GenericWorker *_worker, const size_t id);
 	~VisualElementsI();
 
 	RoboCompVisualElements::TObjects getVisualObjects(RoboCompVisualElements::TObjects objects, const Ice::Current&);
@@ -38,6 +38,11 @@ public:
 private:
 
 	GenericWorker *worker;
+	size_t id;
+
+	// Array handlers for each method
+	std::array<std::function<RoboCompVisualElements::TObjects(RoboCompVisualElements::TObjects)>, 1> getVisualObjectsHandlers;
+	std::array<std::function<void(RoboCompVisualElements::TObjects)>, 1> setVisualObjectsHandlers;
 
 };
 

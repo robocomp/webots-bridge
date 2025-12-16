@@ -23,13 +23,13 @@
 #include <Ice/Ice.h>
 #include <IMU.h>
 
-#include "genericworker.h"
+#include "../src/specificworker.h"
 
 
 class IMUI : public virtual RoboCompIMU::IMU
 {
 public:
-	IMUI(GenericWorker *_worker);
+	IMUI(GenericWorker *_worker, const size_t id);
 	~IMUI();
 
 	RoboCompIMU::Acceleration getAcceleration(const Ice::Current&);
@@ -42,6 +42,15 @@ public:
 private:
 
 	GenericWorker *worker;
+	size_t id;
+
+	// Array handlers for each method
+	std::array<std::function<RoboCompIMU::Acceleration(void)>, 1> getAccelerationHandlers;
+	std::array<std::function<RoboCompIMU::Gyroscope(void)>, 1> getAngularVelHandlers;
+	std::array<std::function<RoboCompIMU::DataImu(void)>, 1> getDataImuHandlers;
+	std::array<std::function<RoboCompIMU::Magnetic(void)>, 1> getMagneticFieldsHandlers;
+	std::array<std::function<RoboCompIMU::Orientation(void)>, 1> getOrientationHandlers;
+	std::array<std::function<void(void)>, 1> resetImuHandlers;
 
 };
 

@@ -18,9 +18,16 @@
  */
 #include "visualelementsI.h"
 
-VisualElementsI::VisualElementsI(GenericWorker *_worker)
+VisualElementsI::VisualElementsI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
-	worker = _worker;
+	getVisualObjectsHandlers = {
+		[this](auto a) { return worker->VisualElements_getVisualObjects(a); }
+	};
+
+	setVisualObjectsHandlers = {
+		[this](auto a) { return worker->VisualElements_setVisualObjects(a); }
+	};
+
 }
 
 
@@ -31,11 +38,29 @@ VisualElementsI::~VisualElementsI()
 
 RoboCompVisualElements::TObjects VisualElementsI::getVisualObjects(RoboCompVisualElements::TObjects objects, const Ice::Current&)
 {
-	return worker->VisualElements_getVisualObjects(objects);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getVisualObjectsHandlers.size())
+		return  getVisualObjectsHandlers[id](objects);
+	else
+		throw std::out_of_range("Invalid getVisualObjects id: " + std::to_string(id));
+
 }
 
 void VisualElementsI::setVisualObjects(RoboCompVisualElements::TObjects objects, const Ice::Current&)
 {
-	worker->VisualElements_setVisualObjects(objects);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < setVisualObjectsHandlers.size())
+		 setVisualObjectsHandlers[id](objects);
+	else
+		throw std::out_of_range("Invalid setVisualObjects id: " + std::to_string(id));
+
 }
 

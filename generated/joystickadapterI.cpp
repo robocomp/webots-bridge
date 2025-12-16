@@ -18,9 +18,12 @@
  */
 #include "joystickadapterI.h"
 
-JoystickAdapterI::JoystickAdapterI(GenericWorker *_worker)
+JoystickAdapterI::JoystickAdapterI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
-	worker = _worker;
+	sendDataHandlers = {
+		[this](auto a) { return worker->JoystickAdapter_sendData(a); }
+	};
+
 }
 
 
@@ -31,6 +34,15 @@ JoystickAdapterI::~JoystickAdapterI()
 
 void JoystickAdapterI::sendData(RoboCompJoystickAdapter::TData data, const Ice::Current&)
 {
-	worker->JoystickAdapter_sendData(data);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < sendDataHandlers.size())
+		 sendDataHandlers[id](data);
+	else
+		throw std::out_of_range("Invalid sendData id: " + std::to_string(id));
+
 }
 

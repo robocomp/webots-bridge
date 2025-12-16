@@ -86,6 +86,7 @@ public:
 	RoboCompLidar3D::TDataCategory Lidar3D_getLidarDataByCategory(RoboCompLidar3D::TCategories categories, Ice::Long timestamp);
 	RoboCompLidar3D::TData Lidar3D_getLidarDataProyectedInImage(std::string name);
 	RoboCompLidar3D::TData Lidar3D_getLidarDataWithThreshold2d(std::string name, float distance, int decimationDegreeFactor);
+        RoboCompLidar3D::TColorCloudData Lidar3D_getColorCloudData();
 
 	void OmniRobot_correctOdometer(int x, int z, float alpha);
 	void OmniRobot_getBasePose(int &x, int &z, float &alpha);
@@ -128,12 +129,15 @@ private:
     webots::PositionSensor *ps[4];
     webots::Accelerometer* accelerometer;
     webots::Gyro* gyroscope;
+	webots::Camera* zed;
+	webots::RangeFinder* zedRangeFinder;
 
     void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp);
     void receiving_cameraRGBData(webots::Camera* _camera, double timestamp);
     void receiving_depthImageData(webots::RangeFinder* _rangeFinder, double timestamp);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, double timestamp);
     void receiving_robotSpeed(webots::Supervisor* _robot, double timestamp);
+	void receiving_cameraRGBD(webots::Camera* _camera, webots::RangeFinder* _rangeFinder, RoboCompCameraRGBDSimple::TRGBD& _image, double timestamp);
     double generate_noise(double stddev);
 
     // Laser
@@ -186,6 +190,10 @@ private:
     //Lidar3D doublebuffer
     DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_helios;
     DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> double_buffer_pearl;
+
+	// zed
+	RoboCompCameraRGBDSimple::TRGBD zedImage;
+	DoubleBuffer<RoboCompCameraRGBDSimple::TRGBD, RoboCompCameraRGBDSimple::TRGBD> double_buffer_zed;
 
     Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
     std::tuple<float, float, float> rotationMatrixToEulerZYX(const double* R);

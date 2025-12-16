@@ -18,9 +18,20 @@
  */
 #include "laserI.h"
 
-LaserI::LaserI(GenericWorker *_worker)
+LaserI::LaserI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
-	worker = _worker;
+	getLaserAndBStateDataHandlers = {
+		[this](auto a) { return worker->Laser_getLaserAndBStateData(a); }
+	};
+
+	getLaserConfDataHandlers = {
+		[this]() { return worker->Laser_getLaserConfData(); }
+	};
+
+	getLaserDataHandlers = {
+		[this]() { return worker->Laser_getLaserData(); }
+	};
+
 }
 
 
@@ -31,16 +42,43 @@ LaserI::~LaserI()
 
 RoboCompLaser::TLaserData LaserI::getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState, const Ice::Current&)
 {
-	return worker->Laser_getLaserAndBStateData(bState);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getLaserAndBStateDataHandlers.size())
+		return  getLaserAndBStateDataHandlers[id](bState);
+	else
+		throw std::out_of_range("Invalid getLaserAndBStateData id: " + std::to_string(id));
+
 }
 
 RoboCompLaser::LaserConfData LaserI::getLaserConfData(const Ice::Current&)
 {
-	return worker->Laser_getLaserConfData();
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getLaserConfDataHandlers.size())
+		return  getLaserConfDataHandlers[id]();
+	else
+		throw std::out_of_range("Invalid getLaserConfData id: " + std::to_string(id));
+
 }
 
 RoboCompLaser::TLaserData LaserI::getLaserData(const Ice::Current&)
 {
-	return worker->Laser_getLaserData();
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getLaserDataHandlers.size())
+		return  getLaserDataHandlers[id]();
+	else
+		throw std::out_of_range("Invalid getLaserData id: " + std::to_string(id));
+
 }
 

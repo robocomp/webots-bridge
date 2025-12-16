@@ -18,7 +18,7 @@ add_definitions(-fmax-errors=1 -fno-char8_t)
 INCLUDE( $ENV{ROBOCOMP}/cmake/modules/opencv4.cmake )
 
 # Disabling Pragma region warnings.
-add_definitions(-O3 -Wall -fmax-errors=1 -fno-char8_t -Wno-unknown-pragmas)
+add_definitions(-g -Wall -fmax-errors=1 -fno-char8_t -Wno-unknown-pragmas)
 
 # Linking Gazebo libraries
 set(WEBOTS_HOME "/usr/local/webots")

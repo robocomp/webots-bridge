@@ -67,7 +67,6 @@ SpecificWorker::~SpecificWorker()
         delete robot;
 }
 
-
 void SpecificWorker::initialize()
 {
     std::cout << "Initialize worker" << std::endl;
@@ -98,6 +97,8 @@ void SpecificWorker::initialize()
         camera360_2 = robot->getCamera("camera_360_2");
         accelerometer = robot->getAccelerometer("accelerometer");
         gyroscope = robot->getGyro("gyro");
+        zedRangeFinder = robot->getRangeFinder("zed-ranger");
+        zed = robot->getCamera("zed");
 
         // Activa los componentes en la simulación si los detecta.
         if(lidar_helios) lidar_helios->enable(this->getPeriod("Compute"));
@@ -118,6 +119,8 @@ void SpecificWorker::initialize()
         }
         if(accelerometer) accelerometer->enable(this->getPeriod("Compute"));
         if(gyroscope) gyroscope->enable(this->getPeriod("Compute"));
+        if (zedRangeFinder) zedRangeFinder->enable(this->getPeriod("Compute"));
+        if (zed) zed->enable(this->getPeriod("Compute"));
 
         this->setPeriod("Compute", 10);
     }
@@ -126,7 +129,8 @@ void SpecificWorker::initialize()
 void SpecificWorker::compute()
 {
     // Getting simulation timestamp
-    double now = robot->getTime() * 1000;
+    //double now = robot->getTime() * 1000;
+    long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     // Getting the data from simulation.
     if(robot) receiving_robotSpeed(robot, now);
     if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue, now);
@@ -134,6 +138,7 @@ void SpecificWorker::compute()
     if(camera) receiving_cameraRGBData(camera, now);
     if(range_finder) receiving_depthImageData(range_finder, now);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
+    if(zedRangeFinder && zed) receiving_cameraRGBD(zed, zedRangeFinder, zedImage, now);
 
 //    robot->step(this->Period);
 
@@ -189,6 +194,80 @@ int SpecificWorker::startup_check()
 #pragma endregion Robocomp Methods
 
 #pragma region Data-Catching Methods
+
+void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
+                                          webots::RangeFinder* _rangeFinder,
+                                          RoboCompCameraRGBDSimple::TRGBD& _image,
+                                          double timestamp)
+{
+
+    RoboCompCameraRGBDSimple::TRGBD new_zed_image;
+
+    new_zed_image.image.alivetime = new_zed_image.depth.alivetime = new_zed_image.points.alivetime = timestamp;
+    new_zed_image.image.period = new_zed_image.depth.period = new_zed_image.points.period = fps.get_period();
+
+    int width = _camera->getWidth();
+    int height = _camera->getHeight();
+
+    new_zed_image.image.width = new_zed_image.depth.width = width;
+    new_zed_image.image.height = new_zed_image.depth.height = height;
+    new_zed_image.image.compressed = new_zed_image.depth.compressed = new_zed_image.points.compressed = false;
+
+    // -------------------- Imagen RGB --------------------
+    const unsigned char *webotsImageData = _camera->getImage();
+    cv::Mat imageMatBGRA(height, width, CV_8UC4, (void*)webotsImageData);
+
+    cv::Mat imageMatRGB;
+    cv::cvtColor(imageMatBGRA, imageMatRGB, cv::COLOR_BGRA2RGB);
+
+    new_zed_image.image.image.resize(imageMatRGB.total() * imageMatRGB.channels());
+    std::memcpy(new_zed_image.image.image.data(), imageMatRGB.data, new_zed_image.image.image.size());
+
+    // -------------------- Intrínsecos --------------------
+    double fov = _rangeFinder->getFov(); // radianes
+    double fx = width / (2.0 * tan(fov / 2.0));
+    double fy = fx;
+    new_zed_image.depth.focalx = fx;
+    new_zed_image.depth.focaly = fy;
+
+    // -------------------- Imagen de profundidad --------------------
+    const float* depthImage = _rangeFinder->getRangeImage();
+    cv::Mat depthMat(height, width, CV_32FC1, (void*)depthImage);
+    new_zed_image.depth.depth.resize(width * height * sizeof(float));
+    // check conditions to avoid problems
+    if (depthMat.data == nullptr)
+    {
+        qWarning() << "Error: Depth data is null.";
+        return;
+    }
+    std::memcpy(new_zed_image.depth.depth.data(), depthMat.data, new_zed_image.depth.depth.size());
+
+    // -------------------- Point Cloud --------------------
+    RoboCompCameraRGBDSimple::TPoints& points = new_zed_image.points;
+    points.alivetime = timestamp;
+    points.period = fps.get_period();
+    points.compressed = false;
+    int offset = 4;
+    points.points.reserve((width / offset) * (height / offset));
+    for (int v = 0; v < height; v=v+offset)
+        for (int u = 0; u < width; u=u+offset)
+        {
+            float Z = depthMat.at<float>(v, u);
+            // if Z is nan or zero, skip the point
+            if (std::isnan(Z) || Z <= 0.0f || Z > 10000.0f) continue;
+            float cx = width / 2.0f;
+            float cy = height / 2.0f;
+            float X = (u - cx) * Z / fx;
+            float Y = (v - cy) * Z / fy;
+            points.points.emplace_back(X, Y, Z);
+        }
+    const auto [min, max] = std::ranges::minmax_element(points.points, [](auto a, auto b)
+        {return std::hypot(a.x, a.x, a.z) < std::hypot(b.x, b.x, b.z);});
+    // qInfo() << "ZED points size: " << points.points.size() << " - min dist: " << std::hypot(min->x, min->y, min->z) <<
+    //                     " mm - max dist: " << std::hypot(max->x, max->y, max->z) << " mm";
+    double_buffer_zed.put(std::move(new_zed_image));
+}
+
 
 void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, double timestamp)
 {
@@ -549,21 +628,12 @@ RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::
 
 RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::string camera)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-    last_read.store(std::chrono::high_resolution_clock::now());
-    return this->cameraImage;
+    return double_buffer_zed.get_idemp().image;
 }
 
 RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std::string camera)
 {
-#ifdef HIBERNATION_ENABLED
-    hibernation = true;
-#endif
-    last_read.store(std::chrono::high_resolution_clock::now());
-    printNotImplementedWarningMessage("CameraRGBDSimple_getPoints");
-    return RoboCompCameraRGBDSimple::TPoints();
+    return double_buffer_zed.get_idemp().points;
 }
 
 #pragma endregion CamerRGBDSimple
@@ -664,6 +734,15 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarDataProyectedInImage(std:
     printNotImplementedWarningMessage("Lidar3D_getLidarDataProyectedInImage");
     return ret;
 }
+
+RoboCompLidar3D::TColorCloudData SpecificWorker::Lidar3D_getColorCloudData()
+{
+        RoboCompLidar3D::TColorCloudData ret{};
+        //implementCODE
+
+        return ret;
+}
+
 
 #pragma endregion Lidar
 

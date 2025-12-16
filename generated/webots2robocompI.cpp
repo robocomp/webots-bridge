@@ -18,9 +18,16 @@
  */
 #include "webots2robocompI.h"
 
-Webots2RobocompI::Webots2RobocompI(GenericWorker *_worker)
+Webots2RobocompI::Webots2RobocompI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
-	worker = _worker;
+	resetWebotsHandlers = {
+		[this]() { return worker->Webots2Robocomp_resetWebots(); }
+	};
+
+	setPathToHumanHandlers = {
+		[this](auto a, auto b) { return worker->Webots2Robocomp_setPathToHuman(a, b); }
+	};
+
 }
 
 
@@ -31,11 +38,29 @@ Webots2RobocompI::~Webots2RobocompI()
 
 void Webots2RobocompI::resetWebots(const Ice::Current&)
 {
-	worker->Webots2Robocomp_resetWebots();
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < resetWebotsHandlers.size())
+		 resetWebotsHandlers[id]();
+	else
+		throw std::out_of_range("Invalid resetWebots id: " + std::to_string(id));
+
 }
 
 void Webots2RobocompI::setPathToHuman(int humanId, RoboCompGridder::TPath path, const Ice::Current&)
 {
-	worker->Webots2Robocomp_setPathToHuman(humanId, path);
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < setPathToHumanHandlers.size())
+		 setPathToHumanHandlers[id](humanId, path);
+	else
+		throw std::out_of_range("Invalid setPathToHuman id: " + std::to_string(id));
+
 }
 

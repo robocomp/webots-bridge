@@ -88,16 +88,149 @@
 #include <joystickadapterI.h>
 
 #include <Camera360RGB.h>
+#include <CameraRGBDSimple.h>
 #include <FullPoseEstimation.h>
-#include <GenericBase.h>
+#include <FullPoseEstimationPub.h>
 #include <GenericBase.h>
 #include <Gridder.h>
+#include <IMU.h>
+#include <JoystickAdapter.h>
+#include <Laser.h>
+#include <Lidar3D.h>
+#include <OmniRobot.h>
 #include <Person.h>
+#include <VisualElements.h>
+#include <Webots2Robocomp.h>
 
 //#define USE_QTGUI
 
 #define PROGRAM_NAME    "Webots2Robocomp"
 #define SERVER_FULL_NAME   "RoboComp Webots2Robocomp::Webots2Robocomp"
+
+
+template <typename InterfaceType>
+void implement( const Ice::CommunicatorPtr& communicator,
+                const std::string& endpointConfig,
+                const std::string& adapterName,
+                SpecificWorker* worker,
+                int index)
+{
+    try
+    {
+        Ice::ObjectAdapterPtr adapter = communicator->createObjectAdapterWithEndpoints(adapterName, endpointConfig);
+        auto servant = std::make_shared<InterfaceType>(worker, index);
+        adapter->add(servant, Ice::stringToIdentity(adapterName));
+        adapter->activate();
+        std::cout << "[" << PROGRAM_NAME << "]: " << adapterName << " adapter created in port " << endpointConfig << std::endl;
+    }
+    catch (const IceStorm::TopicExists&)
+    {
+        std::cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for " << adapterName << std::endl;
+    }
+}
+
+template <typename PubProxyType, typename PubProxyPointer>
+void publish(const IceStorm::TopicManagerPrxPtr& topicManager,
+             std::string name_topic,
+             const std::string& topicBaseName,
+             PubProxyPointer& pubProxy,
+             const std::string& programName)
+{
+    if (!name_topic.empty()) name_topic += "/";
+    name_topic += topicBaseName;
+
+    std::cout << "[\033[1;36m" << programName << "\033[0m]: \033[32mINFO\033[0m Topic: " 
+              << name_topic << " will be used for publication. \033[0m\n";
+
+    std::shared_ptr<IceStorm::TopicPrx> topic;
+    while (!topic)
+    {
+        try
+        {
+            topic = topicManager->retrieve(name_topic);
+        }
+        catch (const IceStorm::NoSuchTopic&)
+        {
+            std::cout << "\n\n[\033[1;36m" << programName << "\033[0m]: \033[1;33mWARNING\033[0m " 
+                      << name_topic << " topic did not create. \033[32mCreating...\033[0m\n\n";
+            try
+            {
+                topic = topicManager->create(name_topic);
+            }
+            catch (const IceStorm::TopicExists&)
+            {
+                std::cout << "[\033[31m" << programName << "\033[0m]: \033[1;33mWARNING\033[0m publishing the " 
+                          << name_topic << " topic. It's possible that other component have created\n";
+            }
+        }
+        catch(const IceUtil::NullHandleException&)
+        {
+            std::cout << "[\033[31m" << programName << "\033[0m]: \033[31mERROR\033[0m TopicManager is Null.\n";
+            throw;
+        }
+    }
+    auto publisher = topic->getPublisher()->ice_oneway();
+    pubProxy = Ice::uncheckedCast<PubProxyType>(publisher);
+}
+
+template <typename SubInterfaceType>
+void subscribe( const Ice::CommunicatorPtr& communicator,
+                const IceStorm::TopicManagerPrxPtr& topicManager,
+                const std::string& endpointConfig,
+                std::string name_topic,
+                const std::string& topicBaseName,
+                SpecificWorker* worker,
+                int index,
+                std::shared_ptr<IceStorm::TopicPrx> topic,
+                Ice::ObjectPrxPtr& proxy, 
+                const std::string& programName)
+{
+    try   
+    {  
+        if (!name_topic.empty()) name_topic += "/";
+        name_topic += topicBaseName;
+
+        Ice::ObjectAdapterPtr adapter = communicator->createObjectAdapterWithEndpoints(name_topic, endpointConfig);
+        auto servant = std::make_shared<SubInterfaceType>(worker, index);
+        auto proxy = adapter->addWithUUID(servant)->ice_oneway();
+
+        std::cout << "[\033[1;36m" << programName << "\033[0m]: \033[32mINFO\033[0m Topic: " 
+                  << name_topic << " will be used in subscription. \033[0m\n";
+
+        std::shared_ptr<IceStorm::TopicPrx> topic;
+        if(!topic)
+        {
+            try {
+                topic = topicManager->create(name_topic);
+                std::cout << "\n\n[\033[1;36m" << programName << "\033[0m]: \033[1;33mWARNING\033[0m " 
+                          << name_topic << " topic did not create. \033[32mTopic created\033[0m\n\n";
+            }
+            catch (const IceStorm::TopicExists&) {
+                try{
+                    std::cout << "[\033[31m" << programName << "\033[0m]: \033[1;33mWARNING\033[0m Probably other client already opened the topic. \033[32mTrying to connect.\033[0m\n";
+                    topic = topicManager->retrieve(name_topic);
+                }
+                catch(const IceStorm::NoSuchTopic&)
+                {
+                    std::cout << "[" << programName << "]: Topic doesn't exists and couldn't be created.\n";
+                    return;
+                }
+            }
+            catch(const IceUtil::NullHandleException&)
+            {
+                std::cout << "[\033[31m" << programName << "\033[0m]: \033[31mERROR\033[0m TopicManager is Null.\n";
+                throw;
+            }
+            IceStorm::QoS qos;
+            topic->subscribeAndGetPublisher(qos, proxy);
+        }
+        adapter->activate();
+    }
+    catch(const IceStorm::NoSuchTopic&)
+    {
+        std::cout << "[" << PROGRAM_NAME << "]: Error creating topic.\n";
+    }
+}
 
 
 class Webots2Robocomp : public Ice::Application
@@ -108,8 +241,7 @@ public:
 		this->prefix = prfx.toStdString();
 		this->startup_check_flag=startup_check; 
 
-		this->configLoader.load(this->configFile);
-		this->configLoader.printConfig();
+		initialize();
 		}
 
 	Ice::InitializationData getInitializationDataIce();
@@ -139,6 +271,7 @@ void Webots2Robocomp::initialize()
 {
     this->configLoader.load(this->configFile);
 	this->configLoader.printConfig();
+	std::cout<<std::endl;
 }
 
 int Webots2Robocomp::run(int argc, char* argv[])
@@ -164,10 +297,13 @@ int Webots2Robocomp::run(int argc, char* argv[])
 
 	int status=EXIT_SUCCESS;
 
-	RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrxPtr fullposeestimationpub_pubproxy;
+	RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrxPtr fullposeestimationpub_proxy;
+	std::shared_ptr<IceStorm::TopicPrx> joystickadapter_topic;
+	Ice::ObjectPrxPtr joystickadapter;
 
-	std::string proxy, tmp;
-	initialize();
+
+
+	//Topic Manager code
 
 	IceStorm::TopicManagerPrxPtr topicManager;
 	try
@@ -185,208 +321,50 @@ int Webots2Robocomp::run(int argc, char* argv[])
 		std::cout << "[" << PROGRAM_NAME << "]: Exception: 'rcnode' not running: " << ex << std::endl;
 		return EXIT_FAILURE;
 	}
-	std::shared_ptr<IceStorm::TopicPrx> fullposeestimationpub_topic;
 
-	while (!fullposeestimationpub_topic)
-	{
-		try
-		{
-			fullposeestimationpub_topic = topicManager->retrieve("FullPoseEstimationPub");
-		}
-		catch (const IceStorm::NoSuchTopic&)
-		{
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR retrieving FullPoseEstimationPub topic. \n";
-			try
-			{
-				fullposeestimationpub_topic = topicManager->create("FullPoseEstimationPub");
-			}
-			catch (const IceStorm::TopicExists&){
-				// Another client created the topic.
-				std::cout << "[" << PROGRAM_NAME << "]: ERROR publishing the FullPoseEstimationPub topic. It's possible that other component have created\n";
-			}
-		}
-		catch(const IceUtil::NullHandleException&)
-		{
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR TopicManager is Null. Check that your configuration file contains an entry like:\n"<<
-			"\t\tTopicManager.Proxy=IceStorm/TopicManager:default -p <port>\n";
-			return EXIT_FAILURE;
-		}
-	}
+	//Publish code
+	publish<RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrx, RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrxPtr>(topicManager,
+	                    configLoader.get<std::string>("Proxies.FullPoseEstimationPubPrefix"),
+	                    "FullPoseEstimationPub", fullposeestimationpub_proxy, PROGRAM_NAME);
 
-	auto fullposeestimationpub_pub = fullposeestimationpub_topic->getPublisher()->ice_oneway();
-	fullposeestimationpub_pubproxy = Ice::uncheckedCast<RoboCompFullPoseEstimationPub::FullPoseEstimationPubPrx>(fullposeestimationpub_pub);
-
-	tprx = std::make_tuple(fullposeestimationpub_pubproxy);
+	tprx = std::make_tuple(fullposeestimationpub_proxy);
 	SpecificWorker *worker = new SpecificWorker(this->configLoader, tprx, startup_check_flag);
 	QObject::connect(worker, SIGNAL(kill()), &a, SLOT(quit()));
 
 	try
 	{
 
-		try
-		{
-			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Endpoints.Camera360RGB");
-		    Ice::ObjectAdapterPtr adapterCamera360RGB = communicator()->createObjectAdapterWithEndpoints("Camera360RGB", tmp);
-			auto camera360rgb = std::make_shared<Camera360RGBI>(worker);
-			adapterCamera360RGB->add(camera360rgb, Ice::stringToIdentity("camera360rgb"));
-			adapterCamera360RGB->activate();
-			std::cout << "[" << PROGRAM_NAME << "]: Camera360RGB adapter created in port " << tmp << std::endl;
-		}
-		catch (const IceStorm::TopicExists&){
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for Camera360RGB\n";
-		}
+		//Implement code
+		implement<Camera360RGBI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.Camera360RGB"), 
+		                    "camera360rgb", worker,  0);
+		implement<CameraRGBDSimpleI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.CameraRGBDSimple"), 
+		                    "camerargbdsimple", worker,  0);
+		implement<IMUI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.IMU"), 
+		                    "imu", worker,  0);
+		implement<LaserI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.Laser"), 
+		                    "laser", worker,  0);
+		implement<Lidar3DI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.Lidar3D"), 
+		                    "lidar3d", worker,  0);
+		implement<OmniRobotI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.OmniRobot"), 
+		                    "omnirobot", worker,  0);
+		implement<VisualElementsI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.VisualElements"), 
+		                    "visualelements", worker,  0);
+		implement<Webots2RobocompI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.Webots2Robocomp"), 
+		                    "webots2robocomp", worker,  0);
 
-
-		try
-		{
-			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Endpoints.CameraRGBDSimple");
-		    Ice::ObjectAdapterPtr adapterCameraRGBDSimple = communicator()->createObjectAdapterWithEndpoints("CameraRGBDSimple", tmp);
-			auto camerargbdsimple = std::make_shared<CameraRGBDSimpleI>(worker);
-			adapterCameraRGBDSimple->add(camerargbdsimple, Ice::stringToIdentity("camerargbdsimple"));
-			adapterCameraRGBDSimple->activate();
-			std::cout << "[" << PROGRAM_NAME << "]: CameraRGBDSimple adapter created in port " << tmp << std::endl;
-		}
-		catch (const IceStorm::TopicExists&){
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for CameraRGBDSimple\n";
-		}
-
-
-		try
-		{
-			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Endpoints.IMU");
-		    Ice::ObjectAdapterPtr adapterIMU = communicator()->createObjectAdapterWithEndpoints("IMU", tmp);
-			auto imu = std::make_shared<IMUI>(worker);
-			adapterIMU->add(imu, Ice::stringToIdentity("imu"));
-			adapterIMU->activate();
-			std::cout << "[" << PROGRAM_NAME << "]: IMU adapter created in port " << tmp << std::endl;
-		}
-		catch (const IceStorm::TopicExists&){
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for IMU\n";
-		}
-
-
-		try
-		{
-			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Endpoints.Laser");
-		    Ice::ObjectAdapterPtr adapterLaser = communicator()->createObjectAdapterWithEndpoints("Laser", tmp);
-			auto laser = std::make_shared<LaserI>(worker);
-			adapterLaser->add(laser, Ice::stringToIdentity("laser"));
-			adapterLaser->activate();
-			std::cout << "[" << PROGRAM_NAME << "]: Laser adapter created in port " << tmp << std::endl;
-		}
-		catch (const IceStorm::TopicExists&){
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for Laser\n";
-		}
-
-
-		try
-		{
-			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Endpoints.Lidar3D");
-		    Ice::ObjectAdapterPtr adapterLidar3D = communicator()->createObjectAdapterWithEndpoints("Lidar3D", tmp);
-			auto lidar3d = std::make_shared<Lidar3DI>(worker);
-			adapterLidar3D->add(lidar3d, Ice::stringToIdentity("lidar3d"));
-			adapterLidar3D->activate();
-			std::cout << "[" << PROGRAM_NAME << "]: Lidar3D adapter created in port " << tmp << std::endl;
-		}
-		catch (const IceStorm::TopicExists&){
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for Lidar3D\n";
-		}
-
-
-		try
-		{
-			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Endpoints.OmniRobot");
-		    Ice::ObjectAdapterPtr adapterOmniRobot = communicator()->createObjectAdapterWithEndpoints("OmniRobot", tmp);
-			auto omnirobot = std::make_shared<OmniRobotI>(worker);
-			adapterOmniRobot->add(omnirobot, Ice::stringToIdentity("omnirobot"));
-			adapterOmniRobot->activate();
-			std::cout << "[" << PROGRAM_NAME << "]: OmniRobot adapter created in port " << tmp << std::endl;
-		}
-		catch (const IceStorm::TopicExists&){
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for OmniRobot\n";
-		}
-
-
-		try
-		{
-			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Endpoints.VisualElements");
-		    Ice::ObjectAdapterPtr adapterVisualElements = communicator()->createObjectAdapterWithEndpoints("VisualElements", tmp);
-			auto visualelements = std::make_shared<VisualElementsI>(worker);
-			adapterVisualElements->add(visualelements, Ice::stringToIdentity("visualelements"));
-			adapterVisualElements->activate();
-			std::cout << "[" << PROGRAM_NAME << "]: VisualElements adapter created in port " << tmp << std::endl;
-		}
-		catch (const IceStorm::TopicExists&){
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for VisualElements\n";
-		}
-
-
-		try
-		{
-			// Server adapter creation and publication
-		    tmp = configLoader.get<std::string>("Endpoints.Webots2Robocomp");
-		    Ice::ObjectAdapterPtr adapterWebots2Robocomp = communicator()->createObjectAdapterWithEndpoints("Webots2Robocomp", tmp);
-			auto webots2robocomp = std::make_shared<Webots2RobocompI>(worker);
-			adapterWebots2Robocomp->add(webots2robocomp, Ice::stringToIdentity("webots2robocomp"));
-			adapterWebots2Robocomp->activate();
-			std::cout << "[" << PROGRAM_NAME << "]: Webots2Robocomp adapter created in port " << tmp << std::endl;
-		}
-		catch (const IceStorm::TopicExists&){
-			std::cout << "[" << PROGRAM_NAME << "]: ERROR creating or activating adapter for Webots2Robocomp\n";
-		}
-
-
-		// Server adapter creation and publication
-		std::shared_ptr<IceStorm::TopicPrx> joystickadapter_topic;
-		Ice::ObjectPrxPtr joystickadapter;
-		try
-		{
-
-		    tmp = configLoader.get<std::string>("Endpoints.JoystickAdapterTopic");
-			Ice::ObjectAdapterPtr JoystickAdapter_adapter = communicator()->createObjectAdapterWithEndpoints("joystickadapter", tmp);
-			RoboCompJoystickAdapter::JoystickAdapterPtr joystickadapterI_ =  std::make_shared <JoystickAdapterI>(worker);
-			auto joystickadapter = JoystickAdapter_adapter->addWithUUID(joystickadapterI_)->ice_oneway();
-			if(!joystickadapter_topic)
-			{
-				try {
-					joystickadapter_topic = topicManager->create("JoystickAdapter");
-				}
-				catch (const IceStorm::TopicExists&) {
-					//Another client created the topic
-					try{
-						std::cout << "[" << PROGRAM_NAME << "]: Probably other client already opened the topic. Trying to connect.\n";
-						joystickadapter_topic = topicManager->retrieve("JoystickAdapter");
-					}
-					catch(const IceStorm::NoSuchTopic&)
-					{
-						std::cout << "[" << PROGRAM_NAME << "]: Topic doesn't exists and couldn't be created.\n";
-						//Error. Topic does not exist
-					}
-				}
-				catch(const IceUtil::NullHandleException&)
-				{
-					std::cout << "[" << PROGRAM_NAME << "]: ERROR TopicManager is Null. Check that your configuration file contains an entry like:\n"<<
-					"\t\tTopicManager.Proxy=IceStorm/TopicManager:default -p <port>\n";
-					return EXIT_FAILURE;
-				}
-				IceStorm::QoS qos;
-				joystickadapter_topic->subscribeAndGetPublisher(qos, joystickadapter);
-			}
-			JoystickAdapter_adapter->activate();
-		}
-		catch(const IceStorm::NoSuchTopic&)
-		{
-			std::cout << "[" << PROGRAM_NAME << "]: Error creating JoystickAdapter topic.\n";
-			//Error. Topic does not exist
-		}
-
+		//Subscribe code
+		subscribe<JoystickAdapterI>(communicator(),
+		                    topicManager, configLoader.get<std::string>("Endpoints.JoystickAdapterTopic"),
+						    configLoader.get<std::string>("Endpoints.JoystickAdapterPrefix"), "JoystickAdapter", worker,  0,
+						    joystickadapter_topic, joystickadapter, PROGRAM_NAME);
 
 		// Server adapter creation and publication
 		std::cout << SERVER_FULL_NAME " started" << std::endl;
@@ -403,11 +381,12 @@ int Webots2Robocomp::run(int argc, char* argv[])
 		try
 		{
 			std::cout << "Unsubscribing topic: joystickadapter " <<std::endl;
-			joystickadapter_topic->unsubscribe( joystickadapter );
+			joystickadapter_topic->unsubscribe(joystickadapter);
+
 		}
 		catch(const Ice::Exception& ex)
 		{
-			std::cout << "ERROR Unsubscribing topic: joystickadapter " << ex.what()<<std::endl;
+			std::cout << "ERROR Unsubscribing" << ex.what()<<std::endl;
 		}
 
 

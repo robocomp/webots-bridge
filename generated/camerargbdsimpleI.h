@@ -23,13 +23,13 @@
 #include <Ice/Ice.h>
 #include <CameraRGBDSimple.h>
 
-#include "genericworker.h"
+#include "../src/specificworker.h"
 
 
 class CameraRGBDSimpleI : public virtual RoboCompCameraRGBDSimple::CameraRGBDSimple
 {
 public:
-	CameraRGBDSimpleI(GenericWorker *_worker);
+	CameraRGBDSimpleI(GenericWorker *_worker, const size_t id);
 	~CameraRGBDSimpleI();
 
 	RoboCompCameraRGBDSimple::TRGBD getAll(std::string camera, const Ice::Current&);
@@ -40,6 +40,13 @@ public:
 private:
 
 	GenericWorker *worker;
+	size_t id;
+
+	// Array handlers for each method
+	std::array<std::function<RoboCompCameraRGBDSimple::TRGBD(std::string)>, 1> getAllHandlers;
+	std::array<std::function<RoboCompCameraRGBDSimple::TDepth(std::string)>, 1> getDepthHandlers;
+	std::array<std::function<RoboCompCameraRGBDSimple::TImage(std::string)>, 1> getImageHandlers;
+	std::array<std::function<RoboCompCameraRGBDSimple::TPoints(std::string)>, 1> getPointsHandlers;
 
 };
 
