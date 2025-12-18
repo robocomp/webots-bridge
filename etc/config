@@ -19,7 +19,7 @@ Endpoints.JoystickAdapterPrefix = ""
 # Proxies for publishes interfaces
 Proxies.FullPoseEstimationPubPrefix = ""
 
-Period.Compute = 100
+Period.Compute = 10
 Period.Emergency = 500
 
 Ice.Warn.Connections = "0"

@@ -15,7 +15,6 @@ LIST(APPEND LIBS ${LIBS})
 INCLUDE( $ENV{ROBOCOMP}/cmake/modules/opencv4.cmake )
 
 # Disabling Pragma region warnings.
-
 add_definitions(-O3 -Wall -fmax-errors=1 -fno-char8_t -Wno-unknown-pragmas)
 
 # Linking Gazebo libraries
