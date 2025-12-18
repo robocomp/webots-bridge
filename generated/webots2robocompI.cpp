@@ -65,7 +65,7 @@ void Webots2RobocompI::setDoorAngle(float angle, const Ice::Current&)
 		 setDoorAngleHandlers[id](angle);
 	else
 		throw std::out_of_range("Invalid setDoorAngle id: " + std::to_string(id));
-	
+
 }
 
 void Webots2RobocompI::setPathToHuman(int humanId, RoboCompGridder::TPath path, const Ice::Current&)
