@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2025 by YOUR NAME HERE
+ *    Copyright (C) 2026 by YOUR NAME HERE
  *
  *    This file is part of RoboComp
  *
@@ -107,6 +107,7 @@ public:
 	virtual RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
 	virtual void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
 
+	virtual RoboCompWebots2Robocomp::ObjectPose Webots2Robocomp_getObjectPose(std::string DEF) = 0;
 	virtual void Webots2Robocomp_resetWebots() = 0;
 	virtual void Webots2Robocomp_setDoorAngle(float angle) = 0;
 	virtual void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path) = 0;

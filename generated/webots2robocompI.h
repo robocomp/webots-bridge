@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2025 by YOUR NAME HERE
+ *    Copyright (C) 2026 by YOUR NAME HERE
  *
  *    This file is part of RoboComp
  *
@@ -32,6 +32,7 @@ public:
 	Webots2RobocompI(GenericWorker *_worker, const size_t id);
 	~Webots2RobocompI();
 
+	RoboCompWebots2Robocomp::ObjectPose getObjectPose(std::string DEF, const Ice::Current&);
 	void resetWebots(const Ice::Current&);
 	void setDoorAngle(float angle, const Ice::Current&);
 	void setPathToHuman(int humanId, RoboCompGridder::TPath path, const Ice::Current&);
@@ -42,6 +43,7 @@ private:
 	size_t id;
 
 	// Array handlers for each method
+	std::array<std::function<RoboCompWebots2Robocomp::ObjectPose(std::string)>, 1> getObjectPoseHandlers;
 	std::array<std::function<void(void)>, 1> resetWebotsHandlers;
 	std::array<std::function<void(float)>, 1> setDoorAngleHandlers;
 	std::array<std::function<void(int, RoboCompGridder::TPath)>, 1> setPathToHumanHandlers;

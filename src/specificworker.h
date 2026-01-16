@@ -115,9 +115,11 @@ public:
 
 	RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects);
 	void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects);
+
+	RoboCompWebots2Robocomp::ObjectPose Webots2Robocomp_getObjectPose(std::string DEF);
 	void Webots2Robocomp_resetWebots();
-	void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
 	void Webots2Robocomp_setDoorAngle(float angle);
+	void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
 
 	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 

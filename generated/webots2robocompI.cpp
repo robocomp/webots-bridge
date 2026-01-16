@@ -1,5 +1,5 @@
 /*
- *    Copyright (C) 2025 by YOUR NAME HERE
+ *    Copyright (C) 2026 by YOUR NAME HERE
  *
  *    This file is part of RoboComp
  *
@@ -20,6 +20,10 @@
 
 Webots2RobocompI::Webots2RobocompI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
+	getObjectPoseHandlers = {
+		[this](auto a) { return worker->Webots2Robocomp_getObjectPose(a); }
+	};
+
 	resetWebotsHandlers = {
 		[this]() { return worker->Webots2Robocomp_resetWebots(); }
 	};
@@ -39,6 +43,20 @@ Webots2RobocompI::~Webots2RobocompI()
 {
 }
 
+
+RoboCompWebots2Robocomp::ObjectPose Webots2RobocompI::getObjectPose(std::string DEF, const Ice::Current&)
+{
+
+    #ifdef HIBERNATION_ENABLED
+		worker->hibernationTick();
+	#endif
+    
+	if (id < getObjectPoseHandlers.size())
+		return  getObjectPoseHandlers[id](DEF);
+	else
+		throw std::out_of_range("Invalid getObjectPose id: " + std::to_string(id));
+
+}
 
 void Webots2RobocompI::resetWebots(const Ice::Current&)
 {

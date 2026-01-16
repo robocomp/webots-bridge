@@ -906,12 +906,66 @@ void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder
 void SpecificWorker::Webots2Robocomp_resetWebots()
 {
 //implementCODE
-
+    
 }
 
 void SpecificWorker::Webots2Robocomp_setDoorAngle(float angle)
 {
 	setDoorAperture(angle);
+}
+
+RoboCompWebots2Robocomp::Quaternion axisAngleToQuaternion(const webots::Field &rotation) {
+    RoboCompWebots2Robocomp::Quaternion q;
+
+    double rx = rotation.getSFRotation()[0];
+    double ry = rotation.getSFRotation()[1];
+    double rz = rotation.getSFRotation()[2];
+    const double angle = rotation.getSFRotation()[3];
+
+    // Aseguramos que el eje esté normalizado (por seguridad)
+    // En Webots generalmente ya viene normalizado, pero esto evita errores.
+    if (const double norm = std::sqrt(rx*rx + ry*ry + rz*rz); norm > 0) {
+        rx /= norm;
+        ry /= norm;
+        rz /= norm;
+    }
+
+    // Fórmulas de ángulo medio
+    const double halfAngle = angle * 0.5;
+    const double sinHalf = std::sin(halfAngle);
+
+    q.w = std::cos(halfAngle);
+    q.x = rx * sinHalf;
+    q.y = ry * sinHalf;
+    q.z = rz * sinHalf;
+
+    return q;
+}
+
+RoboCompWebots2Robocomp::ObjectPose SpecificWorker::Webots2Robocomp_getObjectPose(std::string DEF)
+{
+    RoboCompWebots2Robocomp::ObjectPose ret{};
+
+    webots::Node* object_node = robot->getFromDef(DEF);
+    if (object_node == nullptr) {
+        std::cout << "Object with DEF:" << DEF << "not found" << std::endl;
+        return ret;
+    }
+    auto object_position = object_node->getField("translation");
+    auto object_rotation = object_node->getField("rotation");
+    if (object_position == nullptr or object_rotation == nullptr) {
+        std::cout << "Object node dont have postion or rotation" << std::endl;
+        return ret;
+    }
+    ret.position = RoboCompWebots2Robocomp::Vector3{
+        static_cast<float>(object_position->getSFVec3f()[0] * 1000),
+        static_cast<float>(object_position->getSFVec3f()[1] * 1000),
+        static_cast<float>(object_position->getSFVec3f()[2] * 1000),
+    };
+
+    ret.orientation = axisAngleToQuaternion(*object_rotation);
+
+	return ret;
 }
 
 #pragma endregion Webots2Robocomp Methods
@@ -1160,6 +1214,7 @@ void SpecificWorker::setDoorAperture(float _aperture) {
 // From the RoboCompWebots2Robocomp you can use this types:
 // RoboCompWebots2Robocomp::Vector3
 // RoboCompWebots2Robocomp::Quaternion
+// RoboCompWebots2Robocomp::ObjectPose
 
 /**************************************/
 // From the RoboCompJoystickAdapter you can use this types:
