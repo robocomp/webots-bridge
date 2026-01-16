@@ -965,8 +965,13 @@ RoboCompIMU::Acceleration SpecificWorker::IMU_getAcceleration()
 
 RoboCompIMU::Gyroscope SpecificWorker::IMU_getAngularVel()
 {
-    RoboCompIMU::Gyroscope ret{};
-    printNotImplementedWarningMessage(__FUNCTION__);
+    RoboCompIMU::Gyroscope ret
+    {
+        (float)gyroscope->getValues()[0],
+        (float)gyroscope->getValues()[1],
+        (float)gyroscope->getValues()[2],
+    };
+    
     return ret;
 }
 
