@@ -132,7 +132,7 @@ void SpecificWorker::compute()
 {
     // Getting simulation timestamp
     //double now = robot->getTime() * 1000;
-    long now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     // Getting the data from simulation.
     if(robot) receiving_robotSpeed(robot, now);
     if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue, now);
@@ -159,7 +159,7 @@ void SpecificWorker::compute()
 //        point.y = i * 200;
 //        path.push_back(point);
 //        //print point
-//        std::cout << "Point: " << point.x << " " << point.y << std::endl;
+//        std::cout << "Point: " << point.x " " << point.y << std::endl;
 //    }
 //    //transform path using setPathToHuman
 //    Webots2Robocomp_setPathToHuman(0, path);
@@ -263,10 +263,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
             float Y = (v - cy) * Z / fy;
             points.points.emplace_back(X, Y, Z);
         }
-    const auto [min, max] = std::ranges::minmax_element(points.points, [](auto a, auto b)
-        {return std::hypot(a.x, a.x, a.z) < std::hypot(b.x, b.x, b.z);});
-    // qInfo() << "ZED points size: " << points.points.size() << " - min dist: " << std::hypot(min->x, min->y, min->z) <<
-    //                     " mm - max dist: " << std::hypot(max->x, max->y, max->z) << " mm";
+    // (min/max removido: no se usa y costaba CPU)
     double_buffer_zed.put(std::move(new_zed_image));
 }
 
@@ -370,15 +367,14 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double tim
     pose_data.vry = 0;
     pose_data.vrz = shadow_velocity[5] + generate_noise(ruido_stddev_alpha);
     pose_data.timestamp = timestamp;
-
     this->fullposeestimationpub_pubproxy->newFullPose(pose_data);
 }
 
 double SpecificWorker::generate_noise(double stddev)
 {
-    std::random_device rd; // Obtiene una semilla aleatoria del hardware
-    std::mt19937 gen(rd()); // Generador de números aleatorios basado en Mersenne Twister
-    std::normal_distribution<> d(0, stddev); // Distribución normal con media 0 y desviación estándar stddev
+    // Reuse generator to avoid reseeding cost per call.
+    static thread_local std::mt19937 gen(std::random_device{}());
+    std::normal_distribution<> d(0.0, stddev);
     return d(gen);
 }
 
@@ -412,33 +408,55 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
     newLaserConfData.minRange = minRange;
     newLaserConfData.angleRes = fov / horizontalResolution;
 
-    //std::cout << "horizontal resolution: " << horizontalResolution << " vertical resolution: " << verticalResolution << " fov: " << fov << " vertical fov: " << verticalFov << std::endl;
-
     if(!rangeImage) { std::cout << "Lidar data empty." << std::endl; return; }
 
+    if(name == "helios")
+        verticalFov = 2.8;
 
-    for (int j = 0; j < verticalResolution; ++j) {
-        for (int i = 0; i < horizontalResolution; ++i) {
+    newLidar3dData.points.reserve(static_cast<size_t>(horizontalResolution) * static_cast<size_t>(verticalResolution));
+    newLaserData.reserve(static_cast<size_t>(horizontalResolution) * static_cast<size_t>(verticalResolution));
+
+    // Precompute angles to avoid sin/cos per point.
+    std::vector<float> h_angle(horizontalResolution);
+    std::vector<float> h_cos(horizontalResolution);
+    std::vector<float> h_sin(horizontalResolution);
+    for (int i = 0; i < horizontalResolution; ++i)
+    {
+        float horizontalAngle = static_cast<float>(M_PI - i * newLaserConfData.angleRes - fov / 2.0);
+        h_angle[i] = horizontalAngle;
+        h_cos[i] = std::cos(horizontalAngle);
+        h_sin[i] = std::sin(horizontalAngle);
+    }
+
+    std::vector<float> v_angle(verticalResolution);
+    std::vector<float> v_cos(verticalResolution);
+    std::vector<float> v_sin(verticalResolution);
+    for (int j = 0; j < verticalResolution; ++j)
+    {
+        float verticalAngle = static_cast<float>(M_PI + j * (verticalFov / verticalResolution) - verticalFov / 2.0);
+        v_angle[j] = verticalAngle;
+        v_cos[j] = std::cos(verticalAngle);
+        v_sin[j] = std::sin(verticalAngle);
+    }
+
+    // Iterate with horizontal angle outer loop to keep phi-sorted order.
+    for (int i = 0; i < horizontalResolution; ++i)
+    {
+        for (int j = 0; j < verticalResolution; ++j)
+        {
             int index = j * horizontalResolution + i;
 
             //distance meters to millimeters
             const float distance = rangeImage[index]; //Meters
 
-            //TODO rotacion del eje y con el M_PI, solucionar
-            float horizontalAngle = M_PI - i * newLaserConfData.angleRes - fov / 2;
-
-            if(name == "helios")
-            {
-                verticalFov = 2.8;
-            }
-
-            float verticalAngle = M_PI + j * (verticalFov / verticalResolution) - verticalFov / 2;
+            const float horizontalAngle = h_angle[i];
+            const float verticalAngle = v_angle[j];
 
             //Calculate Cartesian co-ordinates and rectify axis positions
             Eigen::Vector3f lidar_point(
-                    distance * cos(horizontalAngle) * cos(verticalAngle),
-                    distance * sin(horizontalAngle) * cos(verticalAngle),
-                    distance * sin(verticalAngle));
+                    distance * h_cos[i] * v_cos[j],
+                    distance * h_sin[i] * v_cos[j],
+                    distance * v_sin[j]);
 
             if (not (std::isinf(lidar_point.x()) or std::isinf(lidar_point.y()) or std::isinf(lidar_point.z())))
             {
@@ -468,8 +486,6 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
             }
         }
     }
-    //Points order to angles
-    std::ranges::sort(newLidar3dData.points, {}, &RoboCompLidar3D::TPoint::phi);
 
     laserData = newLaserData;
     laserDataConf = newLaserConfData;
@@ -482,7 +498,7 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
 }
 void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double timestamp)
 {
-    RoboCompCameraRGBDSimple::TImage newImage;
+    RoboCompCameraRGBDSimple::TImage newImage{};
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
 //    newImage.period = getPeriod("Compute");
@@ -499,29 +515,12 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double tim
     newImage.height = _camera->getHeight();
 
     const unsigned char* webotsImageData = _camera->getImage();
+    cv::Mat imageMatBGRA(newImage.height, newImage.width, CV_8UC4, (void*)webotsImageData);
+    cv::Mat imageMatBGR;
+    cv::cvtColor(imageMatBGRA, imageMatBGR, cv::COLOR_BGRA2BGR);
 
-    // Crear un std::vector para la nueva imagen RGB.
-    std::vector<unsigned char> rgbImage;
-    rgbImage.reserve(3 * newImage.width * newImage.height);  // Reservar espacio para RGB
-
-    for (int y = 0; y < newImage.height; y++)
-    {
-        for (int x = 0; x < newImage.width; x++)
-        {
-            // Extraer cada canal por separado
-            unsigned char r = _camera->imageGetRed(webotsImageData, newImage.width, x, y);
-            unsigned char g = _camera->imageGetGreen(webotsImageData, newImage.width, x, y);
-            unsigned char b = _camera->imageGetBlue(webotsImageData, newImage.width, x, y);
-
-            // Añadir los canales al std::vector BGR final.
-            rgbImage.push_back(b);
-            rgbImage.push_back(g);
-            rgbImage.push_back(r);
-        }
-    }
-
-    // Asignar la imagen RGB al tipo TImage de Robocomp
-    newImage.image = rgbImage;
+    newImage.image.resize(imageMatBGR.total() * imageMatBGR.channels());
+    std::memcpy(newImage.image.data(), imageMatBGR.data, newImage.image.size());
     newImage.compressed = false;
 
     // Asignamos el resultado final al atributo de clase
@@ -529,7 +528,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double tim
 }
 void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder, double timestamp)
 {
-    RoboCompCameraRGBDSimple::TDepth newDepthImage;
+    RoboCompCameraRGBDSimple::TDepth newDepthImage{};
 
     // Se establece el periodo de refresco de la imagen en milisegundos.
     newDepthImage.period = fps.get_period();
@@ -545,19 +544,14 @@ void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder,
 
     // Accedemos a cada depth value y le aplicamos un factor de escala.
     const int imageElementCount = newDepthImage.width * newDepthImage.height;
+    newDepthImage.depth.resize(static_cast<size_t>(imageElementCount) * sizeof(float));
 
-    for(int i= 0 ; i<imageElementCount; i++){
-
+    unsigned char* out = newDepthImage.depth.data();
+    for (int i = 0; i < imageElementCount; i++)
+    {
         // Este es el factor de escala a aplicar.
         float scaledValue = webotsDepthData[i] * 10;
-
-        // Convertimos de float a std::array de bytes.
-        unsigned char singleElement[sizeof(float)];
-        memcpy(singleElement, &scaledValue, sizeof(float));
-
-        for(uint j=0; j<sizeof(float); j++){
-            newDepthImage.depth.emplace_back(singleElement[j]);
-        }
+        std::memcpy(out + static_cast<size_t>(i) * sizeof(float), &scaledValue, sizeof(float));
     }
 
     // Asignamos el resultado final al atributo de clase
