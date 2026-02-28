@@ -144,25 +144,10 @@ void SpecificWorker::compute()
 
 //    robot->step(getPeriod("Compute"));
 
-    robot->step(1);
+     robot->step(1);
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 
     parseHumanObjects();
-
-//    //TODO: DELETE, only for debuggin purpose
-//    //Create 15 equispace points Robocomp gridder path between (1000, 0) and (1000, 3000) points
-//    RoboCompGridder::TPath path;
-//    for(int i = 0; i < 15; i++)
-//    {
-//        RoboCompGridder::TPoint point;
-//        point.x = 1000;
-//        point.y = i * 200;
-//        path.push_back(point);
-//        //print point
-//        std::cout << "Point: " << point.x " " << point.y << std::endl;
-//    }
-//    //transform path using setPathToHuman
-//    Webots2Robocomp_setPathToHuman(0, path);
 
     //humansMovement();
     fps.print("FPS:");
@@ -200,7 +185,7 @@ int SpecificWorker::startup_check()
 void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
                                           webots::RangeFinder* _rangeFinder,
                                           RoboCompCameraRGBDSimple::TRGBD& _image,
-                                          double timestamp)
+                                          long timestamp)
 {
 
     RoboCompCameraRGBDSimple::TRGBD new_zed_image;
@@ -229,7 +214,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     double fov = _rangeFinder->getFov(); // radianes
     double fx = width / (2.0 * tan(fov / 2.0));
     double fy = fx;
-    new_zed_image.depth.focalx = fx;
+    new_zed_image.depth.focalx = fx;    //TODO: cambiar el tipo en el IDSL
     new_zed_image.depth.focaly = fy;
 
     // -------------------- Imagen de profundidad --------------------
@@ -268,7 +253,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
 }
 
 
-void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, double timestamp)
+void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, long timestamp)
 {
     RoboCompCamera360RGB::TImage newImage360;
 
@@ -323,51 +308,60 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     //std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 }
 
-void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, double timestamp)
+void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long timestamp)
 {
     const double* shadow_position = robotNode->getPosition();
     const double* shadow_orientation = robotNode->getOrientation();
     const double* shadow_velocity = robotNode->getVelocity();
-    float orientation = atan2(shadow_orientation[1], shadow_orientation[0]) - M_PI_2;
+    const float orientation = atan2(shadow_orientation[1], shadow_orientation[0]) - M_PI_2;
 
     Eigen::Matrix2f rt_rotation_matrix;
     rt_rotation_matrix << cos(orientation), -sin(orientation),
-            sin(orientation), cos(orientation);
+                          sin(orientation), cos(orientation);
 
     // Multiply the velocity std::vector by the inverse of the rotation matrix to get the velocity in the robot reference system
-    Eigen::Vector2f shadow_velocity_2d(shadow_velocity[1], shadow_velocity[0]);
-    Eigen::Vector2f rt_rotation_matrix_inv = rt_rotation_matrix.inverse() * shadow_velocity_2d;
+    const Eigen::Vector2f shadow_velocity_world(shadow_velocity[1], shadow_velocity[0]);
+    const Eigen::Vector2f shadow_velocity_local = rt_rotation_matrix.inverse() * shadow_velocity_world;
 
+    // Asumimos que el ruido lo pone el cliente
     // Velocidades puras en mm/s y rad/s
-    double velocidad_x = 0.1; // Ejemplo: 100 mm/s
-    double velocidad_y = 0.1; // Ejemplo: 150 mm/s
-    double alpha = 0.075; // Ejemplo: 0.05 rad/s
-
-    // Desviación estándar del ruido (ejemplo: 5% del valor de las velocidades)
-    double ruido_stddev_x = 0.05 * velocidad_x;
-    double ruido_stddev_y = 0.05 * velocidad_y;
-    double ruido_stddev_alpha = 0.05 * alpha;
+    // const float velocidad_x = 0.1f; // Ejemplo: 100 mm/s
+    // float velocidad_y = 0.1f; // Ejemplo: 150 mm/s
+    // float alpha = 0.075f; // Ejemplo: 0.05 rad/s
+    //
+    // // Desviación estándar del ruido (ejemplo: 5% del valor de las velocidades)
+    // float ruido_stddev_x = 0.05f * velocidad_x;
+    // float ruido_stddev_y = 0.05f * velocidad_y;
+    // float ruido_stddev_alpha = 0.05f * alpha;
 
     RoboCompFullPoseEstimation::FullPoseEuler pose_data;
 
     // Posición
-    pose_data.x = shadow_position[0];  // metros → mm
-    pose_data.y = shadow_position[1];
-    pose_data.z = shadow_position[2];
+    pose_data.x = static_cast<float>(shadow_position[0]);  // metros → mm
+    pose_data.y = static_cast<float>(shadow_position[1]);
+    pose_data.z = static_cast<float>(shadow_position[2]);
 
     // Orientación (Euler en radianes) 2D
     pose_data.rx = 0.0;
     pose_data.ry = 0.0;
     pose_data.rz = orientation;  // Ángulo Z ya calculado
 
-    pose_data.vx = -rt_rotation_matrix_inv(0) + generate_noise(ruido_stddev_x);
-    pose_data.vy = -rt_rotation_matrix_inv(1) + generate_noise(ruido_stddev_y);
+    // Velocidades en world frame
+    pose_data.vx = -shadow_velocity_local(0);
+    pose_data.vy = -shadow_velocity_local(1);
     pose_data.vz = 0;
     pose_data.vrx = 0;
     pose_data.vry = 0;
-    pose_data.vrz = shadow_velocity[5] + generate_noise(ruido_stddev_alpha);
+    pose_data.vrz = static_cast<float>(shadow_velocity[5]);
+    
+    // Velocidades en robot frame
+    pose_data.adv = -shadow_velocity_local(0);
+    pose_data.side = -shadow_velocity_local(1);
+    pose_data.rot = static_cast<float>(shadow_velocity[5]);
+
     pose_data.timestamp = timestamp;
     this->fullposeestimationpub_pubproxy->newFullPose(pose_data);
+
 }
 
 double SpecificWorker::generate_noise(double stddev)
@@ -378,7 +372,7 @@ double SpecificWorker::generate_noise(double stddev)
     return d(gen);
 }
 
-void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp)
+void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, long timestamp)
 {
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
@@ -496,7 +490,7 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
 
     _lidar3dData.put(std::move(newLidar3dData));
 }
-void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double timestamp)
+void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, long timestamp)
 {
     RoboCompCameraRGBDSimple::TImage newImage{};
 
@@ -526,7 +520,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, double tim
     // Asignamos el resultado final al atributo de clase
     this->cameraImage = newImage;
 }
-void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder, double timestamp)
+void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder, long timestamp)
 {
     RoboCompCameraRGBDSimple::TDepth newDepthImage{};
 

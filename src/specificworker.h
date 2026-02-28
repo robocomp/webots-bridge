@@ -179,12 +179,12 @@ private:
 	webots::RangeFinder* zedRangeFinder;
 	webots::Node* controllableDoor;
 
-    void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, double timestamp);
-    void receiving_cameraRGBData(webots::Camera* _camera, double timestamp);
-    void receiving_depthImageData(webots::RangeFinder* _rangeFinder, double timestamp);
-    void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, double timestamp);
-    void receiving_robotSpeed(webots::Supervisor* _robot, double timestamp);
-	void receiving_cameraRGBD(webots::Camera* _camera, webots::RangeFinder* _rangeFinder, RoboCompCameraRGBDSimple::TRGBD& _image, double timestamp);
+    void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, long timestamp);
+    void receiving_cameraRGBData(webots::Camera* _camera, long timestamp);
+    void receiving_depthImageData(webots::RangeFinder* _rangeFinder, long timestamp);
+    void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, long timestamp);
+    void receiving_robotSpeed(webots::Supervisor* _robot, long timestamp);
+	void receiving_cameraRGBD(webots::Camera* _camera, webots::RangeFinder* _rangeFinder, RoboCompCameraRGBDSimple::TRGBD& _image, long timestamp);
     double generate_noise(double stddev);
 
     // Laser
