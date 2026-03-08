@@ -234,7 +234,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     points.alivetime = timestamp;
     points.period = fps.get_period();
     points.compressed = false;
-    int offset = 4;
+    int offset = 2;
     points.points.reserve((width / offset) * (height / offset));
     for (int v = 0; v < height; v=v+offset)
         for (int u = 0; u < width; u=u+offset)
@@ -355,8 +355,8 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     pose_data.vrz = static_cast<float>(shadow_velocity[5]);
     
     // Velocidades en robot frame
-    pose_data.adv = -shadow_velocity_local(0);
-    pose_data.side = -shadow_velocity_local(1);
+    pose_data.adv = -shadow_velocity_local(1);  //y
+    pose_data.side = -shadow_velocity_local(0);
     pose_data.rot = static_cast<float>(shadow_velocity[5]);
 
     pose_data.timestamp = timestamp;
@@ -575,13 +575,7 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
 RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    RoboCompCameraRGBDSimple::TRGBD newRGBD;
-
-    newRGBD.image = this->cameraImage;
-    newRGBD.depth = this->depthImage;
-    // TODO: Que devuelva tambien la nube de puntos.
-
-    return newRGBD;
+    return double_buffer_zed.get_idemp();
 }
 
 RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::string camera)
