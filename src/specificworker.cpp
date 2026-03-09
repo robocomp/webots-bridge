@@ -273,6 +273,7 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
     newImage360.width = 2 * _camera1->getWidth();
     newImage360.height = _camera1->getHeight();
+    newImage360.depth = 3; // assuming color images
 
     // Establecer el periodo de refresco de la imagen en milisegundos.
 //    newImage360.period = getPeriod("Compute");
@@ -507,6 +508,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, long times
     // Obtener la resolución de la imagen.
     newImage.width = _camera->getWidth();
     newImage.height = _camera->getHeight();
+    newImage.depth = 3;  // assuming color images
 
     const unsigned char* webotsImageData = _camera->getImage();
     cv::Mat imageMatBGRA(newImage.height, newImage.width, CV_8UC4, (void*)webotsImageData);
