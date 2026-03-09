@@ -79,6 +79,9 @@ void SpecificWorker::initialize()
     }
     else
     {
+         try { pars.points3D = configLoader.get<bool>("Camera.ZED.points3D"); } catch(...) {}
+         try { pars.humans = configLoader.get<bool>("Humans"); } catch(...) {}
+
         // pause variable
         last_read.store(std::chrono::high_resolution_clock::now());
 
@@ -137,8 +140,8 @@ void SpecificWorker::compute()
     if(robot) receiving_robotSpeed(robot, now);
     if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue, now);
     if(lidar_pearl) receiving_lidarData("bpearl", lidar_pearl, double_buffer_pearl, pearl_delay_queue, now);
-    if(camera) receiving_cameraRGBData(camera, now);
-    if(range_finder) receiving_depthImageData(range_finder, now);
+    //if(camera) receiving_cameraRGBData(camera, now);
+    //if(range_finder) receiving_depthImageData(range_finder, now);
     if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
     if(zedRangeFinder && zed) receiving_cameraRGBD(zed, zedRangeFinder, zedImage, now);
 
@@ -147,7 +150,7 @@ void SpecificWorker::compute()
      robot->step(1);
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 
-    parseHumanObjects();
+    if(pars.humans) parseHumanObjects();
 
     //humansMovement();
     fps.print("FPS:");
@@ -190,6 +193,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
 
     RoboCompCameraRGBDSimple::TRGBD new_zed_image;
 
+    // ------------------ Common -----------------------------
     new_zed_image.image.alivetime = new_zed_image.depth.alivetime = new_zed_image.points.alivetime = timestamp;
     new_zed_image.image.period = new_zed_image.depth.period = new_zed_image.points.period = fps.get_period();
 
@@ -208,16 +212,21 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     cv::cvtColor(imageMatBGRA, imageMatRGB, cv::COLOR_BGRA2RGB);
 
     new_zed_image.image.image.resize(imageMatRGB.total() * imageMatRGB.channels());
-    std::memcpy(new_zed_image.image.image.data(), imageMatRGB.data, new_zed_image.image.image.size());
+    new_zed_image.image.depth = imageMatRGB.channels();
 
-    // -------------------- Intrínsecos --------------------
+    std::memcpy(new_zed_image.image.image.data(), imageMatRGB.data, new_zed_image.image.image.size());
+    // TODO: check if this can be done with move_iterator
+
+    // -------------------- Imagen de profundidad --------------------
     double fov = _rangeFinder->getFov(); // radianes
     double fx = width / (2.0 * tan(fov / 2.0));
     double fy = fx;
     new_zed_image.depth.focalx = fx;    //TODO: cambiar el tipo en el IDSL
     new_zed_image.depth.focaly = fy;
+    new_zed_image.depth.width = _rangeFinder->getWidth();
+    new_zed_image.depth.height = _rangeFinder->getHeight();
+    new_zed_image.depth.depthFactor = _rangeFinder->getMaxRange();
 
-    // -------------------- Imagen de profundidad --------------------
     const float* depthImage = _rangeFinder->getRangeImage();
     cv::Mat depthMat(height, width, CV_32FC1, (void*)depthImage);
     new_zed_image.depth.depth.resize(width * height * sizeof(float));
@@ -230,25 +239,27 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     std::memcpy(new_zed_image.depth.depth.data(), depthMat.data, new_zed_image.depth.depth.size());
 
     // -------------------- Point Cloud --------------------
-    RoboCompCameraRGBDSimple::TPoints& points = new_zed_image.points;
-    points.alivetime = timestamp;
-    points.period = fps.get_period();
-    points.compressed = false;
-    int offset = 2;
-    points.points.reserve((width / offset) * (height / offset));
-    for (int v = 0; v < height; v=v+offset)
-        for (int u = 0; u < width; u=u+offset)
-        {
-            float Z = depthMat.at<float>(v, u);
-            // if Z is nan or zero, skip the point
-            if (std::isnan(Z) || Z <= 0.0f || Z > 10000.0f) continue;
-            float cx = width / 2.0f;
-            float cy = height / 2.0f;
-            float X = (u - cx) * Z / fx;
-            float Y = (v - cy) * Z / fy;
-            points.points.emplace_back(X, Y, Z);
-        }
-    // (min/max removido: no se usa y costaba CPU)
+    if(pars.points3D)
+    {
+        RoboCompCameraRGBDSimple::TPoints& points = new_zed_image.points;
+        points.alivetime = timestamp;
+        points.period = fps.get_period();
+        points.compressed = false;
+        int offset = 2;
+        points.points.reserve((width / offset) * (height / offset));
+        for (int v = 0; v < height; v=v+offset)
+            for (int u = 0; u < width; u=u+offset)
+            {
+                float Z = depthMat.at<float>(v, u);
+                // if Z is nan or zero, skip the point
+                if (std::isnan(Z) || Z <= 0.0f || Z > 10000.0f) continue;
+                float cx = width / 2.0f;
+                float cy = height / 2.0f;
+                float X = (u - cx) * Z / fx;
+                float Y = (v - cy) * Z / fy;
+                points.points.emplace_back(X, Y, Z);
+            }
+    }
     double_buffer_zed.put(std::move(new_zed_image));
 }
 
@@ -522,37 +533,37 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, long times
     // Asignamos el resultado final al atributo de clase
     this->cameraImage = newImage;
 }
-void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder, long timestamp)
-{
-    RoboCompCameraRGBDSimple::TDepth newDepthImage{};
-
-    // Se establece el periodo de refresco de la imagen en milisegundos.
-    newDepthImage.period = fps.get_period();
-
-    // Obtener la resolución de la imagen de profundidad.
-    newDepthImage.width = _rangeFinder->getWidth();
-    newDepthImage.height = _rangeFinder->getHeight();
-    newDepthImage.depthFactor = _rangeFinder->getMaxRange();
-    newDepthImage.compressed = false;
-
-    // Obtener la imagen de profundidad
-    const float* webotsDepthData = _rangeFinder->getRangeImage();
-
-    // Accedemos a cada depth value y le aplicamos un factor de escala.
-    const int imageElementCount = newDepthImage.width * newDepthImage.height;
-    newDepthImage.depth.resize(static_cast<size_t>(imageElementCount) * sizeof(float));
-
-    unsigned char* out = newDepthImage.depth.data();
-    for (int i = 0; i < imageElementCount; i++)
-    {
-        // Este es el factor de escala a aplicar.
-        float scaledValue = webotsDepthData[i] * 10;
-        std::memcpy(out + static_cast<size_t>(i) * sizeof(float), &scaledValue, sizeof(float));
-    }
-
-    // Asignamos el resultado final al atributo de clase
-    this->depthImage = newDepthImage;
-}
+// void SpecificWorker::receiving_depthImageData(webots::RangeFinder* _rangeFinder, long timestamp)
+// {
+//     RoboCompCameraRGBDSimple::TDepth newDepthImage{};
+//
+//     // Se establece el periodo de refresco de la imagen en milisegundos.
+//     newDepthImage.period = fps.get_period();
+//
+//     // Obtener la resolución de la imagen de profundidad.
+//     newDepthImage.width = _rangeFinder->getWidth();
+//     newDepthImage.height = _rangeFinder->getHeight();
+//     newDepthImage.depthFactor = _rangeFinder->getMaxRange();
+//     newDepthImage.compressed = false;
+//
+//     // Obtener la imagen de profundidad
+//     const float* webotsDepthData = _rangeFinder->getRangeImage();
+//
+//     // Accedemos a cada depth value y le aplicamos un factor de escala.
+//     const int imageElementCount = newDepthImage.width * newDepthImage.height;
+//     newDepthImage.depth.resize(static_cast<size_t>(imageElementCount) * sizeof(float));
+//
+//     unsigned char* out = newDepthImage.depth.data();
+//     for (int i = 0; i < imageElementCount; i++)
+//     {
+//         // Este es el factor de escala a aplicar.
+//         float scaledValue = webotsDepthData[i] * 10;
+//         std::memcpy(out + static_cast<size_t>(i) * sizeof(float), &scaledValue, sizeof(float));
+//     }
+//
+//     // Asignamos el resultado final al atributo de clase
+//     this->depthImage = newDepthImage;
+// }
 
 #pragma endregion Data-Catching Methods
 
@@ -583,7 +594,7 @@ RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::str
 RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    return this->depthImage;
+    return double_buffer_zed.get_idemp().depth;
 }
 
 RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::string camera)

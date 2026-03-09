@@ -181,7 +181,7 @@ private:
 
     void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, long timestamp);
     void receiving_cameraRGBData(webots::Camera* _camera, long timestamp);
-    void receiving_depthImageData(webots::RangeFinder* _rangeFinder, long timestamp);
+    //void receiving_depthImageData(webots::RangeFinder* _rangeFinder, long timestamp);
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, long timestamp);
     void receiving_robotSpeed(webots::Supervisor* _robot, long timestamp);
 	void receiving_cameraRGBD(webots::Camera* _camera, webots::RangeFinder* _rangeFinder, RoboCompCameraRGBDSimple::TRGBD& _image, long timestamp);
@@ -190,10 +190,6 @@ private:
     // Laser
     RoboCompLaser::TLaserData laserData;
     RoboCompLaser::LaserConfData laserDataConf;
-
-    // Lidar3d
-    //    RoboCompLidar3D::TData lidar3dData_helios;
-    //    RoboCompLidar3D::TData lidar3dData_pearl;
 
     // Camera RGBD simple
     RoboCompCameraRGBDSimple::TDepth depthImage;
@@ -223,6 +219,8 @@ private:
     {
         bool delay = false;
         bool do_joystick = true;
+        bool points3D = false;
+        bool humans = false;
     };
     PARAMS pars;
 

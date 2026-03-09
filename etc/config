@@ -21,6 +21,7 @@ Proxies.FullPoseEstimationPubPrefix = ""
 
 Period.Compute = 10
 Period.Emergency = 500
+Camera.ZED.points3D = False
 
 Ice.Warn.Connections = "0"
 Ice.Trace.Network = "0"
