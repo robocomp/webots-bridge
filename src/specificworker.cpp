@@ -206,6 +206,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     new_zed_image.image.focaly = cfy;
     new_zed_image.image.width = new_zed_image.depth.width = width;
     new_zed_image.image.height = new_zed_image.depth.height = height;
+    new_zed_image.image.depth = 3; // RGB
     new_zed_image.image.compressed = new_zed_image.depth.compressed = new_zed_image.points.compressed = false;
 
     // -------------------- Imagen RGB --------------------
