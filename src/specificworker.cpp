@@ -229,7 +229,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     new_zed_image.depth.focaly = fy;
     new_zed_image.depth.width = _rangeFinder->getWidth();
     new_zed_image.depth.height = _rangeFinder->getHeight();
-    new_zed_image.depth.depthFactor = _rangeFinder->getMaxRange();
+    new_zed_image.depth.depthFactor = 1; // meters
 
     const float* depthImage = _rangeFinder->getRangeImage();
     cv::Mat depthMat(height, width, CV_32FC1, (void*)depthImage);
@@ -547,7 +547,7 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, long times
 //     // Obtener la resolución de la imagen de profundidad.
 //     newDepthImage.width = _rangeFinder->getWidth();
 //     newDepthImage.height = _rangeFinder->getHeight();
-//     newDepthImage.depthFactor = _rangeFinder->getMaxRange();
+//     newDepthImage.depthFactor = 1;
 //     newDepthImage.compressed = false;
 //
 //     // Obtener la imagen de profundidad
