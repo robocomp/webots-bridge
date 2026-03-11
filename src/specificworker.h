@@ -59,7 +59,7 @@ using namespace std;
 #define LX 0.135  // longitudinal distance from robot's COM to wheel [m].
 #define LY 0.237  // lateral distance from robot's COM to wheel [m].
 #define LINEAR_MAX_SPEED 1.5 // meters per second 
-#define ANGULER_MAX_SPEED 4.03 //radians per second
+#define ANGULAR_MAX_SPEED 4.03 //radians per second
 
 /**
  * \brief Class SpecificWorker implements the core functionality of the component.
