@@ -201,7 +201,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     int height = _camera->getHeight();
     double cfov = _camera->getFov(); // radianes
     double cfx = width / (2.0 * tan(cfov / 2.0));
-    double cfy = height / (2.0 * tan(cfov / 2.0));
+    double cfy = cfx; // square pixel assumption //height / (2.0 * tan(cfov / 2.0));
     new_zed_image.image.focalx = cfx;    //TODO: cambiar el tipo en el IDSL
     new_zed_image.image.focaly = cfy;
     new_zed_image.image.width = new_zed_image.depth.width = width;
