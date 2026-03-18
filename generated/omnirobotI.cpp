@@ -21,15 +21,15 @@
 OmniRobotI::OmniRobotI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	correctOdometerHandlers = {
-		[this](auto a, auto b, auto c) { return worker->OmniRobot_correctOdometer(a, b, c); }
+		[this](auto &a, auto &b, auto &c) { return worker->OmniRobot_correctOdometer(a, b, c); }
 	};
 
 	getBasePoseHandlers = {
-		[this](auto a, auto b, auto c) { return worker->OmniRobot_getBasePose(a, b, c); }
+		[this](auto &a, auto &b, auto &c) { return worker->OmniRobot_getBasePose(a, b, c); }
 	};
 
 	getBaseStateHandlers = {
-		[this](auto a) { return worker->OmniRobot_getBaseState(a); }
+		[this](auto &a) { return worker->OmniRobot_getBaseState(a); }
 	};
 
 	resetOdometerHandlers = {
@@ -37,15 +37,15 @@ OmniRobotI::OmniRobotI(GenericWorker *_worker, const size_t id): worker(_worker)
 	};
 
 	setOdometerHandlers = {
-		[this](auto a) { return worker->OmniRobot_setOdometer(a); }
+		[this](auto &a) { return worker->OmniRobot_setOdometer(a); }
 	};
 
 	setOdometerPoseHandlers = {
-		[this](auto a, auto b, auto c) { return worker->OmniRobot_setOdometerPose(a, b, c); }
+		[this](auto &a, auto &b, auto &c) { return worker->OmniRobot_setOdometerPose(a, b, c); }
 	};
 
 	setSpeedBaseHandlers = {
-		[this](auto a, auto b, auto c) { return worker->OmniRobot_setSpeedBase(a, b, c); }
+		[this](auto &a, auto &b, auto &c) { return worker->OmniRobot_setSpeedBase(a, b, c); }
 	};
 
 	stopBaseHandlers = {

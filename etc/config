@@ -23,6 +23,8 @@ Period.Compute = 10
 Period.Emergency = 500
 Camera.ZED.points3D = False
 
+Component.Debug.Verbose = true
+
 Ice.Warn.Connections = "0"
 Ice.Trace.Network = "0"
 Ice.Trace.Protocol = "0"

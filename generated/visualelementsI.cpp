@@ -21,11 +21,11 @@
 VisualElementsI::VisualElementsI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	getVisualObjectsHandlers = {
-		[this](auto a) { return worker->VisualElements_getVisualObjects(a); }
+		[this](auto &a) { return worker->VisualElements_getVisualObjects(a); }
 	};
 
 	setVisualObjectsHandlers = {
-		[this](auto a) { return worker->VisualElements_setVisualObjects(a); }
+		[this](auto &a) { return worker->VisualElements_setVisualObjects(a); }
 	};
 
 }

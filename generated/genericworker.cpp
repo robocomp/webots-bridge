@@ -24,7 +24,9 @@ GenericWorker::GenericWorker(const ConfigLoader& configLoader, TuplePrx tprx) : 
 {
 
 	this->configLoader = configLoader;
-	
+    if (!this->configLoader.get<bool>("Component.Debug.Verbose")) {
+        qInstallMessageHandler([](QtMsgType, const QMessageLogContext&, const QString&) {});
+    }
 	fullposeestimationpub_pubproxy = std::get<0>(tprx);
 
 	states["Initialize"] = std::make_unique<GRAFCETStep>("Initialize", BASIC_PERIOD, nullptr, std::bind(&GenericWorker::initialize, this));
@@ -47,8 +49,6 @@ GenericWorker::GenericWorker(const ConfigLoader& configLoader, TuplePrx tprx) : 
 	connect(&hibernationChecker, SIGNAL(timeout()), this, SLOT(hibernationCheck()));
 
 
-
-    
 }
 
 /**
@@ -131,3 +131,6 @@ void GenericWorker::hibernationTick(){
 	hibernation = true;
 }
 
+
+void GenericWorker::initialize(){
+};

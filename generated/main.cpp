@@ -181,7 +181,7 @@ void subscribe( const Ice::CommunicatorPtr& communicator,
                 const std::string& topicBaseName,
                 SpecificWorker* worker,
                 int index,
-                std::shared_ptr<IceStorm::TopicPrx> topic,
+                std::shared_ptr<IceStorm::TopicPrx>& topic,
                 Ice::ObjectPrxPtr& proxy, 
                 const std::string& programName)
 {
@@ -378,17 +378,15 @@ int Webots2Robocomp::run(int argc, char* argv[])
 		// Run QT Application Event Loop
 		a.exec();
 
-		if(joystickadapter_topic)
+		try
 		{
-			try
-			{
-				std::cout << "Unsubscribing topic: joystickadapter " <<std::endl;
-				joystickadapter_topic->unsubscribe(joystickadapter);
-			}
-			catch(const Ice::Exception& ex)
-			{
-				std::cout << "ERROR Unsubscribing" << ex.what()<<std::endl;
-			}
+			std::cout << "Unsubscribing topic: joystickadapter " <<std::endl;
+			joystickadapter_topic->unsubscribe(joystickadapter);
+
+		}
+		catch(const Ice::Exception& ex)
+		{
+			std::cout << "ERROR Unsubscribing" << ex.what()<<std::endl;
 		}
 
 

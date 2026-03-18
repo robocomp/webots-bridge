@@ -426,6 +426,7 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
 
     newLidar3dData.points.reserve(static_cast<size_t>(horizontalResolution) * static_cast<size_t>(verticalResolution));
     newLaserData.reserve(static_cast<size_t>(horizontalResolution) * static_cast<size_t>(verticalResolution));
+    
 
     // Precompute angles to avoid sin/cos per point.
     std::vector<float> h_angle(horizontalResolution);
@@ -747,10 +748,10 @@ void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
     advz *= 0.001;
     advx *= 0.001;
 
-    speeds[0] = 1.0 / WHEEL_RADIUS * (advz + advx + (LX + LY) * rot);
-    speeds[1] = 1.0 / WHEEL_RADIUS * (advz - advx - (LX + LY) * rot);
-    speeds[2] = 1.0 / WHEEL_RADIUS * (advz - advx + (LX + LY) * rot);
-    speeds[3] = 1.0 / WHEEL_RADIUS * (advz + advx - (LX + LY) * rot);
+    speeds[0] = 1.0 / WHEEL_RADIUS * (advz - advx + (LX + LY) * rot);
+    speeds[1] = 1.0 / WHEEL_RADIUS * (advz + advx - (LX + LY) * rot);
+    speeds[2] = 1.0 / WHEEL_RADIUS * (advz + advx + (LX + LY) * rot);
+    speeds[3] = 1.0 / WHEEL_RADIUS * (advz - advx - (LX + LY) * rot);
     printf("Speeds: vx=%.2f[m/s] vy=%.2f[m/s] ω=%.2f[rad/s]\n", advx, advz, rot);
     for (int i = 0; i < 4; i++)
     {

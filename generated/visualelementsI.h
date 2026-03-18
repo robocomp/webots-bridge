@@ -41,8 +41,8 @@ private:
 	size_t id;
 
 	// Array handlers for each method
-	std::array<std::function<RoboCompVisualElements::TObjects(RoboCompVisualElements::TObjects)>, 1> getVisualObjectsHandlers;
-	std::array<std::function<void(RoboCompVisualElements::TObjects)>, 1> setVisualObjectsHandlers;
+	std::array<std::function<RoboCompVisualElements::TObjects(RoboCompVisualElements::TObjects&)>, 1> getVisualObjectsHandlers;
+	std::array<std::function<void(RoboCompVisualElements::TObjects&)>, 1> setVisualObjectsHandlers;
 
 };
 

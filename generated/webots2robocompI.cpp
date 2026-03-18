@@ -21,7 +21,7 @@
 Webots2RobocompI::Webots2RobocompI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	getObjectPoseHandlers = {
-		[this](auto a) { return worker->Webots2Robocomp_getObjectPose(a); }
+		[this](auto &a) { return worker->Webots2Robocomp_getObjectPose(a); }
 	};
 
 	resetWebotsHandlers = {
@@ -29,11 +29,11 @@ Webots2RobocompI::Webots2RobocompI(GenericWorker *_worker, const size_t id): wor
 	};
 
 	setDoorAngleHandlers = {
-		[this](auto a) { return worker->Webots2Robocomp_setDoorAngle(a); }
+		[this](auto &a) { return worker->Webots2Robocomp_setDoorAngle(a); }
 	};
 
 	setPathToHumanHandlers = {
-		[this](auto a, auto b) { return worker->Webots2Robocomp_setPathToHuman(a, b); }
+		[this](auto &a, auto &b) { return worker->Webots2Robocomp_setPathToHuman(a, b); }
 	};
 
 }
