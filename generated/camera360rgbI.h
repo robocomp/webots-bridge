@@ -40,7 +40,7 @@ private:
 	size_t id;
 
 	// Array handlers for each method
-	std::array<std::function<RoboCompCamera360RGB::TImage(int, int, int, int, int, int)>, 1> getROIHandlers;
+	std::array<std::function<RoboCompCamera360RGB::TImage(int&, int&, int&, int&, int&, int&)>, 1> getROIHandlers;
 
 };
 

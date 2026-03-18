@@ -21,7 +21,7 @@
 LaserI::LaserI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	getLaserAndBStateDataHandlers = {
-		[this](auto a) { return worker->Laser_getLaserAndBStateData(a); }
+		[this](auto &a) { return worker->Laser_getLaserAndBStateData(a); }
 	};
 
 	getLaserConfDataHandlers = {

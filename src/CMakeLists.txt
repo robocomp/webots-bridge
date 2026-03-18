@@ -9,13 +9,20 @@ LIST(APPEND HEADERS
     fixedsizedeque.h
 )
 
-
 LIST(APPEND LIBS ${LIBS})
 
-INCLUDE( $ENV{ROBOCOMP}/cmake/modules/opencv4.cmake )
+add_compile_options(
+    -O3 
+    -march=native 
+    -flto=auto
+    -fno-plt
+    -fomit-frame-pointer
+    -funroll-loops
+)
+add_definitions(-DNDEBUG -fmax-errors=1 -Wno-unknown-pragmas)
+add_link_options(-flto=auto)
 
-# Disabling Pragma region warnings.
-add_definitions(-O3 -Wall -fmax-errors=1 -fno-char8_t -Wno-unknown-pragmas)
+INCLUDE( $ENV{ROBOCOMP}/cmake/modules/opencv4.cmake )
 
 # Linking Gazebo libraries
 set(WEBOTS_HOME "/usr/local/webots")

@@ -21,19 +21,19 @@
 CameraRGBDSimpleI::CameraRGBDSimpleI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	getAllHandlers = {
-		[this](auto a) { return worker->CameraRGBDSimple_getAll(a); }
+		[this](auto &a) { return worker->CameraRGBDSimple_getAll(a); }
 	};
 
 	getDepthHandlers = {
-		[this](auto a) { return worker->CameraRGBDSimple_getDepth(a); }
+		[this](auto &a) { return worker->CameraRGBDSimple_getDepth(a); }
 	};
 
 	getImageHandlers = {
-		[this](auto a) { return worker->CameraRGBDSimple_getImage(a); }
+		[this](auto &a) { return worker->CameraRGBDSimple_getImage(a); }
 	};
 
 	getPointsHandlers = {
-		[this](auto a) { return worker->CameraRGBDSimple_getPoints(a); }
+		[this](auto &a) { return worker->CameraRGBDSimple_getPoints(a); }
 	};
 
 }

@@ -43,10 +43,10 @@ private:
 	size_t id;
 
 	// Array handlers for each method
-	std::array<std::function<RoboCompCameraRGBDSimple::TRGBD(std::string)>, 1> getAllHandlers;
-	std::array<std::function<RoboCompCameraRGBDSimple::TDepth(std::string)>, 1> getDepthHandlers;
-	std::array<std::function<RoboCompCameraRGBDSimple::TImage(std::string)>, 1> getImageHandlers;
-	std::array<std::function<RoboCompCameraRGBDSimple::TPoints(std::string)>, 1> getPointsHandlers;
+	std::array<std::function<RoboCompCameraRGBDSimple::TRGBD(std::string&)>, 1> getAllHandlers;
+	std::array<std::function<RoboCompCameraRGBDSimple::TDepth(std::string&)>, 1> getDepthHandlers;
+	std::array<std::function<RoboCompCameraRGBDSimple::TImage(std::string&)>, 1> getImageHandlers;
+	std::array<std::function<RoboCompCameraRGBDSimple::TPoints(std::string&)>, 1> getPointsHandlers;
 
 };
 

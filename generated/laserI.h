@@ -42,7 +42,7 @@ private:
 	size_t id;
 
 	// Array handlers for each method
-	std::array<std::function<RoboCompLaser::TLaserData(RoboCompGenericBase::TBaseState)>, 1> getLaserAndBStateDataHandlers;
+	std::array<std::function<RoboCompLaser::TLaserData(RoboCompGenericBase::TBaseState&)>, 1> getLaserAndBStateDataHandlers;
 	std::array<std::function<RoboCompLaser::LaserConfData(void)>, 1> getLaserConfDataHandlers;
 	std::array<std::function<RoboCompLaser::TLaserData(void)>, 1> getLaserDataHandlers;
 

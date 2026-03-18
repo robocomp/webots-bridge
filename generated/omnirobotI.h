@@ -47,13 +47,13 @@ private:
 	size_t id;
 
 	// Array handlers for each method
-	std::array<std::function<void(int, int, float)>, 1> correctOdometerHandlers;
-	std::array<std::function<void(int, int, float)>, 1> getBasePoseHandlers;
-	std::array<std::function<void(RoboCompGenericBase::TBaseState)>, 1> getBaseStateHandlers;
+	std::array<std::function<void(int&, int&, float&)>, 1> correctOdometerHandlers;
+	std::array<std::function<void(int&, int&, float&)>, 1> getBasePoseHandlers;
+	std::array<std::function<void(RoboCompGenericBase::TBaseState&)>, 1> getBaseStateHandlers;
 	std::array<std::function<void(void)>, 1> resetOdometerHandlers;
-	std::array<std::function<void(RoboCompGenericBase::TBaseState)>, 1> setOdometerHandlers;
-	std::array<std::function<void(int, int, float)>, 1> setOdometerPoseHandlers;
-	std::array<std::function<void(float, float, float)>, 1> setSpeedBaseHandlers;
+	std::array<std::function<void(RoboCompGenericBase::TBaseState&)>, 1> setOdometerHandlers;
+	std::array<std::function<void(int&, int&, float&)>, 1> setOdometerPoseHandlers;
+	std::array<std::function<void(float&, float&, float&)>, 1> setSpeedBaseHandlers;
 	std::array<std::function<void(void)>, 1> stopBaseHandlers;
 
 };
