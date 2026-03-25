@@ -457,12 +457,14 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
         for (int j = 0; j < verticalResolution; ++j)
         {
             int index = j * horizontalResolution + i;
+            static RoboCompLidar3D::TPoint point;
+
 
             //distance meters to millimeters
             const float distance = rangeImage[index]; //Meters
 
-            const float horizontalAngle = h_angle[i];
-            const float verticalAngle = v_angle[j];
+            point.phi = h_angle[i];// ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
+            point.theta = v_angle[j];// ángulo vertical
 
             //Calculate Cartesian co-ordinates and rectify axis positions
             Eigen::Vector3f lidar_point(
@@ -470,31 +472,27 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
                     distance * h_sin[i] * v_cos[j],
                     distance * v_sin[j]);
 
+
             if (not (std::isinf(lidar_point.x()) or std::isinf(lidar_point.y()) or std::isinf(lidar_point.z())))
             {
-                if (not (name == "bpearl" and lidar_point.z() < 0) and
-                    not (name == "helios" and (verticalAngle > 4.10152 or verticalAngle <2.87979)))//down limit+, uper limit-, horizon line is PI
-//                        not (name == "helios" and (verticalAngle > 2.5307*1.5 or verticalAngle <1.309*1.5 )))
-                    //not (name == "helios" and false))
+                point.r = lidar_point.norm();  // distancia radial
+                if (point.r > 0.2)
                 {
-                    RoboCompLidar3D::TPoint point;
+                    if ((name == "bpearl" and  point.theta < M_PI) or
+                        (name == "helios" and point.theta < 4.10152 and point.theta > 2.8799))//down limit+, uper limit-, horizon line is PI
+                        //(name == "helios" and point.theta > 3.4033 and point.theta < 2.1817 ))
+                    {
+                        point.x = lidar_point.x();
+                        point.y = lidar_point.y();
+                        point.z = lidar_point.z();
 
-                    point.x = lidar_point.x();
-                    point.y = lidar_point.y();
-                    point.z = lidar_point.z();
+                        point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
 
-                    point.r = lidar_point.norm();  // distancia radial
-                    point.phi = horizontalAngle;  // ángulo horizontal // -x para hacer [PI, -PI] y no [-PI, PI]
-                    point.theta = verticalAngle;  // ángulo vertical
-                    point.distance2d = std::hypot(lidar_point.x(),lidar_point.y());  // distancia en el plano xy
-
-                    RoboCompLaser::TData data;
-                    data.angle = point.phi;
-                    data.dist = point.distance2d;
-
-                    newLidar3dData.points.push_back(point);
-                    newLaserData.push_back(data);
+                        newLidar3dData.points.push_back(point);
+                        newLaserData.push_back(RoboCompLaser::TData{.angle=point.phi, .dist = point.distance2d});
+                    }
                 }
+        
             }
         }
     }
