@@ -374,7 +374,7 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     // Velocidades en robot frame
     pose_data.adv = -shadow_velocity_local(1);  //y
     pose_data.side = -shadow_velocity_local(0);
-    pose_data.rot = static_cast<float>(shadow_velocity[5]);
+    pose_data.rot = static_cast<float>(shadow_velocity[5]); // CCW positive 
 
     pose_data.timestamp = timestamp;
     this->fullposeestimationpub_pubproxy->newFullPose(pose_data);
