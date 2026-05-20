@@ -1006,11 +1006,13 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 
 RoboCompIMU::Acceleration SpecificWorker::IMU_getAcceleration()
 {
+    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     const double* accelerometerValues = accelerometer->getValues();
     RoboCompIMU::Acceleration ret{
             (float)accelerometerValues[0],
             (float)accelerometerValues[1],
             (float)accelerometerValues[2],
+            (long)timestamp
     };
 
     return ret;
@@ -1018,11 +1020,13 @@ RoboCompIMU::Acceleration SpecificWorker::IMU_getAcceleration()
 
 RoboCompIMU::Gyroscope SpecificWorker::IMU_getAngularVel()
 {
+    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     RoboCompIMU::Gyroscope ret
     {
         (float)gyroscope->getValues()[0],
         (float)gyroscope->getValues()[1],
         (float)gyroscope->getValues()[2],
+         (long)timestamp
     };
     
     return ret;
@@ -1030,8 +1034,14 @@ RoboCompIMU::Gyroscope SpecificWorker::IMU_getAngularVel()
 
 RoboCompIMU::DataImu SpecificWorker::IMU_getDataImu()
 {
-    RoboCompIMU::DataImu ret{};
-    printNotImplementedWarningMessage(__FUNCTION__);
+    RoboCompIMU::DataImu ret
+    {
+        .acc = IMU_getAcceleration(),
+        .gyro = IMU_getAngularVel(),
+        .mag = IMU_getMagneticFields(),
+        .rot = IMU_getOrientation(),
+        .temperature = 0.f
+    };
     return ret;
 }
 
@@ -1044,13 +1054,16 @@ RoboCompIMU::Magnetic SpecificWorker::IMU_getMagneticFields()
 
 RoboCompIMU::Orientation SpecificWorker::IMU_getOrientation()
 {
+    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     auto orientation = robotNode->getOrientation();
     auto [roll, pitch, yaw] = rotationMatrixToEulerZYX(orientation);
 
-    RoboCompIMU::Orientation ret{
+    RoboCompIMU::Orientation ret
+    {
         roll,
         pitch,
-        yaw
+        yaw,
+        (long)timestamp
     };
     return ret;
 }

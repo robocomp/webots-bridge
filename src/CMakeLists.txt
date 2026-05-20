@@ -19,7 +19,7 @@ add_compile_options(
     -fomit-frame-pointer
     -funroll-loops
 )
-add_definitions(-DNDEBUG -fmax-errors=1 -Wno-unknown-pragmas)
+add_definitions(-O3 -march=native -fmax-errors=1 -Wno-unknown-pragmas)
 add_link_options(-flto=auto)
 
 INCLUDE( $ENV{ROBOCOMP}/cmake/modules/opencv4.cmake )
