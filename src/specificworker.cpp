@@ -372,7 +372,7 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     pose_data.vrz = static_cast<float>(shadow_velocity[5]);
     
     // Velocidades en robot frame
-    pose_data.adv = -shadow_velocity_local(1);  //y
+    pose_data.adv = shadow_velocity_local(1);  //y
     pose_data.side = -shadow_velocity_local(0);
     pose_data.rot = static_cast<float>(shadow_velocity[5]); // CW positive 
 
