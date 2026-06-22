@@ -21,118 +21,103 @@
 IMUI::IMUI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	getAccelerationHandlers = {
-		[this]() { return worker->IMU_getAcceleration(); }
+		[this]() -> RoboCompIMU::Acceleration {if (worker != nullptr) return worker->IMU_getAcceleration(); else throw std::runtime_error("Worker is null");}
 	};
 
 	getAngularVelHandlers = {
-		[this]() { return worker->IMU_getAngularVel(); }
+		[this]() -> RoboCompIMU::Gyroscope {if (worker != nullptr) return worker->IMU_getAngularVel(); else throw std::runtime_error("Worker is null");}
 	};
 
 	getDataImuHandlers = {
-		[this]() { return worker->IMU_getDataImu(); }
+		[this]() -> RoboCompIMU::DataImu {if (worker != nullptr) return worker->IMU_getDataImu(); else throw std::runtime_error("Worker is null");}
 	};
 
 	getMagneticFieldsHandlers = {
-		[this]() { return worker->IMU_getMagneticFields(); }
+		[this]() -> RoboCompIMU::Magnetic {if (worker != nullptr) return worker->IMU_getMagneticFields(); else throw std::runtime_error("Worker is null");}
 	};
 
 	getOrientationHandlers = {
-		[this]() { return worker->IMU_getOrientation(); }
+		[this]() -> RoboCompIMU::Orientation {if (worker != nullptr) return worker->IMU_getOrientation(); else throw std::runtime_error("Worker is null");}
 	};
 
 	resetImuHandlers = {
-		[this]() { return worker->IMU_resetImu(); }
+		[this]() {if (worker != nullptr) worker->IMU_resetImu(); else throw std::runtime_error("Worker is null");}
 	};
 
 }
-
 
 IMUI::~IMUI()
 {
 }
 
-
 RoboCompIMU::Acceleration IMUI::getAcceleration(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getAccelerationHandlers.size())
-		return  getAccelerationHandlers[id]();
-	else
-		throw std::out_of_range("Invalid getAcceleration id: " + std::to_string(id));
-
+	return getAccelerationHandlers.at(id)();
 }
 
 RoboCompIMU::Gyroscope IMUI::getAngularVel(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getAngularVelHandlers.size())
-		return  getAngularVelHandlers[id]();
-	else
-		throw std::out_of_range("Invalid getAngularVel id: " + std::to_string(id));
-
+	return getAngularVelHandlers.at(id)();
 }
 
 RoboCompIMU::DataImu IMUI::getDataImu(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getDataImuHandlers.size())
-		return  getDataImuHandlers[id]();
-	else
-		throw std::out_of_range("Invalid getDataImu id: " + std::to_string(id));
-
+	return getDataImuHandlers.at(id)();
 }
 
 RoboCompIMU::Magnetic IMUI::getMagneticFields(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getMagneticFieldsHandlers.size())
-		return  getMagneticFieldsHandlers[id]();
-	else
-		throw std::out_of_range("Invalid getMagneticFields id: " + std::to_string(id));
-
+	return getMagneticFieldsHandlers.at(id)();
 }
 
 RoboCompIMU::Orientation IMUI::getOrientation(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getOrientationHandlers.size())
-		return  getOrientationHandlers[id]();
-	else
-		throw std::out_of_range("Invalid getOrientation id: " + std::to_string(id));
-
+	return getOrientationHandlers.at(id)();
 }
 
 void IMUI::resetImu(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < resetImuHandlers.size())
-		 resetImuHandlers[id]();
-	else
-		throw std::out_of_range("Invalid resetImu id: " + std::to_string(id));
-
+	resetImuHandlers.at(id)();
 }
-

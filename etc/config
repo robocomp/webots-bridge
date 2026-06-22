@@ -19,7 +19,7 @@ Endpoints.JoystickAdapterPrefix = ""
 # Proxies for publishes interfaces
 Proxies.FullPoseEstimationPubPrefix = ""
 
-Period.Compute = 10
+Period.Compute = 16
 Period.Emergency = 500
 Camera.ZED.points3D = False
 

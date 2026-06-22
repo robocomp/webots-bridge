@@ -21,28 +21,23 @@
 Camera360RGBI::Camera360RGBI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	getROIHandlers = {
-		[this](auto &a, auto &b, auto &c, auto &d, auto &e, auto &f) { return worker->Camera360RGB_getROI(a, b, c, d, e, f); }
+		[this](auto &a, auto &b, auto &c, auto &d, auto &e, auto &f) -> RoboCompCamera360RGB::TImage {if (worker != nullptr) return worker->Camera360RGB_getROI(a, b, c, d, e, f); else throw std::runtime_error("Worker is null");}
 	};
 
 }
-
 
 Camera360RGBI::~Camera360RGBI()
 {
 }
 
-
 RoboCompCamera360RGB::TImage Camera360RGBI::getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getROIHandlers.size())
-		return  getROIHandlers[id](cx, cy, sx, sy, roiwidth, roiheight);
-	else
-		throw std::out_of_range("Invalid getROI id: " + std::to_string(id));
-
+	return getROIHandlers.at(id)(cx, cy, sx, sy, roiwidth, roiheight);
 }
-

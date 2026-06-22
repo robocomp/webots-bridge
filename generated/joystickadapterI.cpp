@@ -21,28 +21,23 @@
 JoystickAdapterI::JoystickAdapterI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	sendDataHandlers = {
-		[this](auto &a) { return worker->JoystickAdapter_sendData(a); }
+		[this](auto &a) {if (worker != nullptr) worker->JoystickAdapter_sendData(a); else throw std::runtime_error("Worker is null");}
 	};
 
 }
-
 
 JoystickAdapterI::~JoystickAdapterI()
 {
 }
 
-
 void JoystickAdapterI::sendData(RoboCompJoystickAdapter::TData data, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < sendDataHandlers.size())
-		 sendDataHandlers[id](data);
-	else
-		throw std::out_of_range("Invalid sendData id: " + std::to_string(id));
-
+	sendDataHandlers.at(id)(data);
 }
-

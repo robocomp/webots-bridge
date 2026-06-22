@@ -25,7 +25,16 @@ GenericWorker::GenericWorker(const ConfigLoader& configLoader, TuplePrx tprx) : 
 
 	this->configLoader = configLoader;
     if (!this->configLoader.get<bool>("Component.Debug.Verbose")) {
-        qInstallMessageHandler([](QtMsgType, const QMessageLogContext&, const QString&) {});
+        std::cout << "\033[32mINFO\033[0m Verbose mode is disabled" << std::endl;
+        qInstallMessageHandler([](QtMsgType type, const QMessageLogContext& context, const QString& msg) {
+                switch (type) {
+                    case QtDebugMsg:   break; // Suppress qDebug()
+                    case QtInfoMsg:    qInfo().noquote() << msg; break;
+                    case QtWarningMsg: qWarning().noquote() << msg; break;
+                    case QtCriticalMsg: qCritical().noquote() << msg; break;
+                    case QtFatalMsg:   qFatal("%s", msg.toUtf8().constData()); break;
+                    default: qInfo().noquote() << msg; break;
+                }});
     }
 	fullposeestimationpub_pubproxy = std::get<0>(tprx);
 

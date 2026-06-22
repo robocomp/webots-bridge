@@ -21,46 +21,39 @@
 VisualElementsI::VisualElementsI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	getVisualObjectsHandlers = {
-		[this](auto &a) { return worker->VisualElements_getVisualObjects(a); }
+		[this](auto &a) -> RoboCompVisualElements::TObjects {if (worker != nullptr) return worker->VisualElements_getVisualObjects(a); else throw std::runtime_error("Worker is null");}
 	};
 
 	setVisualObjectsHandlers = {
-		[this](auto &a) { return worker->VisualElements_setVisualObjects(a); }
+		[this](auto &a) {if (worker != nullptr) worker->VisualElements_setVisualObjects(a); else throw std::runtime_error("Worker is null");}
 	};
 
 }
-
 
 VisualElementsI::~VisualElementsI()
 {
 }
 
-
 RoboCompVisualElements::TObjects VisualElementsI::getVisualObjects(RoboCompVisualElements::TObjects objects, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getVisualObjectsHandlers.size())
-		return  getVisualObjectsHandlers[id](objects);
-	else
-		throw std::out_of_range("Invalid getVisualObjects id: " + std::to_string(id));
-
+	return getVisualObjectsHandlers.at(id)(objects);
 }
 
 void VisualElementsI::setVisualObjects(RoboCompVisualElements::TObjects objects, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < setVisualObjectsHandlers.size())
-		 setVisualObjectsHandlers[id](objects);
-	else
-		throw std::out_of_range("Invalid setVisualObjects id: " + std::to_string(id));
-
+	setVisualObjectsHandlers.at(id)(objects);
 }
-

@@ -142,12 +142,12 @@ void SpecificWorker::compute()
     if(lidar_pearl) receiving_lidarData("bpearl", lidar_pearl, double_buffer_pearl, pearl_delay_queue, now);
     //if(camera) receiving_cameraRGBData(camera, now);
     //if(range_finder) receiving_depthImageData(range_finder, now);
-    if(camera360_1 && camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
+    if(pars.camera360 and camera360_1 and camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
     if(zedRangeFinder && zed) receiving_cameraRGBD(zed, zedRangeFinder, zedImage, now);
 
-//    robot->step(getPeriod("Compute"));
+    qInfo() << "compute";
+    robot->step(getPeriod("Compute"));
 
-     robot->step(1);
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 
     if(pars.humans) parseHumanObjects();

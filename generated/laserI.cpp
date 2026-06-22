@@ -21,64 +21,55 @@
 LaserI::LaserI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	getLaserAndBStateDataHandlers = {
-		[this](auto &a) { return worker->Laser_getLaserAndBStateData(a); }
+		[this](auto &a) -> RoboCompLaser::TLaserData {if (worker != nullptr) return worker->Laser_getLaserAndBStateData(a); else throw std::runtime_error("Worker is null");}
 	};
 
 	getLaserConfDataHandlers = {
-		[this]() { return worker->Laser_getLaserConfData(); }
+		[this]() -> RoboCompLaser::LaserConfData {if (worker != nullptr) return worker->Laser_getLaserConfData(); else throw std::runtime_error("Worker is null");}
 	};
 
 	getLaserDataHandlers = {
-		[this]() { return worker->Laser_getLaserData(); }
+		[this]() -> RoboCompLaser::TLaserData {if (worker != nullptr) return worker->Laser_getLaserData(); else throw std::runtime_error("Worker is null");}
 	};
 
 }
-
 
 LaserI::~LaserI()
 {
 }
 
-
 RoboCompLaser::TLaserData LaserI::getLaserAndBStateData(RoboCompGenericBase::TBaseState &bState, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getLaserAndBStateDataHandlers.size())
-		return  getLaserAndBStateDataHandlers[id](bState);
-	else
-		throw std::out_of_range("Invalid getLaserAndBStateData id: " + std::to_string(id));
-
+	return getLaserAndBStateDataHandlers.at(id)(bState);
 }
 
 RoboCompLaser::LaserConfData LaserI::getLaserConfData(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getLaserConfDataHandlers.size())
-		return  getLaserConfDataHandlers[id]();
-	else
-		throw std::out_of_range("Invalid getLaserConfData id: " + std::to_string(id));
-
+	return getLaserConfDataHandlers.at(id)();
 }
 
 RoboCompLaser::TLaserData LaserI::getLaserData(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getLaserDataHandlers.size())
-		return  getLaserDataHandlers[id]();
-	else
-		throw std::out_of_range("Invalid getLaserData id: " + std::to_string(id));
-
+	return getLaserDataHandlers.at(id)();
 }
-

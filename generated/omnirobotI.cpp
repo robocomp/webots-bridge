@@ -21,154 +21,135 @@
 OmniRobotI::OmniRobotI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	correctOdometerHandlers = {
-		[this](auto &a, auto &b, auto &c) { return worker->OmniRobot_correctOdometer(a, b, c); }
+		[this](auto &a, auto &b, auto &c) {if (worker != nullptr) worker->OmniRobot_correctOdometer(a, b, c); else throw std::runtime_error("Worker is null");}
 	};
 
 	getBasePoseHandlers = {
-		[this](auto &a, auto &b, auto &c) { return worker->OmniRobot_getBasePose(a, b, c); }
+		[this](auto &a, auto &b, auto &c) {if (worker != nullptr) worker->OmniRobot_getBasePose(a, b, c); else throw std::runtime_error("Worker is null");}
 	};
 
 	getBaseStateHandlers = {
-		[this](auto &a) { return worker->OmniRobot_getBaseState(a); }
+		[this](auto &a) {if (worker != nullptr) worker->OmniRobot_getBaseState(a); else throw std::runtime_error("Worker is null");}
 	};
 
 	resetOdometerHandlers = {
-		[this]() { return worker->OmniRobot_resetOdometer(); }
+		[this]() {if (worker != nullptr) worker->OmniRobot_resetOdometer(); else throw std::runtime_error("Worker is null");}
 	};
 
 	setOdometerHandlers = {
-		[this](auto &a) { return worker->OmniRobot_setOdometer(a); }
+		[this](auto &a) {if (worker != nullptr) worker->OmniRobot_setOdometer(a); else throw std::runtime_error("Worker is null");}
 	};
 
 	setOdometerPoseHandlers = {
-		[this](auto &a, auto &b, auto &c) { return worker->OmniRobot_setOdometerPose(a, b, c); }
+		[this](auto &a, auto &b, auto &c) {if (worker != nullptr) worker->OmniRobot_setOdometerPose(a, b, c); else throw std::runtime_error("Worker is null");}
 	};
 
 	setSpeedBaseHandlers = {
-		[this](auto &a, auto &b, auto &c) { return worker->OmniRobot_setSpeedBase(a, b, c); }
+		[this](auto &a, auto &b, auto &c) {if (worker != nullptr) worker->OmniRobot_setSpeedBase(a, b, c); else throw std::runtime_error("Worker is null");}
 	};
 
 	stopBaseHandlers = {
-		[this]() { return worker->OmniRobot_stopBase(); }
+		[this]() {if (worker != nullptr) worker->OmniRobot_stopBase(); else throw std::runtime_error("Worker is null");}
 	};
 
 }
-
 
 OmniRobotI::~OmniRobotI()
 {
 }
 
-
 void OmniRobotI::correctOdometer(int x, int z, float alpha, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < correctOdometerHandlers.size())
-		 correctOdometerHandlers[id](x, z, alpha);
-	else
-		throw std::out_of_range("Invalid correctOdometer id: " + std::to_string(id));
-
+	correctOdometerHandlers.at(id)(x, z, alpha);
 }
 
 void OmniRobotI::getBasePose(int &x, int &z, float &alpha, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getBasePoseHandlers.size())
-		 getBasePoseHandlers[id](x, z, alpha);
-	else
-		throw std::out_of_range("Invalid getBasePose id: " + std::to_string(id));
-
+	getBasePoseHandlers.at(id)(x, z, alpha);
 }
 
 void OmniRobotI::getBaseState(RoboCompGenericBase::TBaseState &state, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getBaseStateHandlers.size())
-		 getBaseStateHandlers[id](state);
-	else
-		throw std::out_of_range("Invalid getBaseState id: " + std::to_string(id));
-
+	getBaseStateHandlers.at(id)(state);
 }
 
 void OmniRobotI::resetOdometer(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < resetOdometerHandlers.size())
-		 resetOdometerHandlers[id]();
-	else
-		throw std::out_of_range("Invalid resetOdometer id: " + std::to_string(id));
-
+	resetOdometerHandlers.at(id)();
 }
 
 void OmniRobotI::setOdometer(RoboCompGenericBase::TBaseState state, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < setOdometerHandlers.size())
-		 setOdometerHandlers[id](state);
-	else
-		throw std::out_of_range("Invalid setOdometer id: " + std::to_string(id));
-
+	setOdometerHandlers.at(id)(state);
 }
 
 void OmniRobotI::setOdometerPose(int x, int z, float alpha, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < setOdometerPoseHandlers.size())
-		 setOdometerPoseHandlers[id](x, z, alpha);
-	else
-		throw std::out_of_range("Invalid setOdometerPose id: " + std::to_string(id));
-
+	setOdometerPoseHandlers.at(id)(x, z, alpha);
 }
 
 void OmniRobotI::setSpeedBase(float advx, float advz, float rot, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < setSpeedBaseHandlers.size())
-		 setSpeedBaseHandlers[id](advx, advz, rot);
-	else
-		throw std::out_of_range("Invalid setSpeedBase id: " + std::to_string(id));
-
+	setSpeedBaseHandlers.at(id)(advx, advz, rot);
 }
 
 void OmniRobotI::stopBase(const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < stopBaseHandlers.size())
-		 stopBaseHandlers[id]();
-	else
-		throw std::out_of_range("Invalid stopBase id: " + std::to_string(id));
-
+	stopBaseHandlers.at(id)();
 }
-

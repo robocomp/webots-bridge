@@ -30,6 +30,7 @@
 #include <QtCore>
 #include <variant>
 #include <unordered_map>
+#include <fps/fps.h>
 
 
 #include <Camera360RGB.h>
@@ -40,6 +41,7 @@
 #include <Gridder.h>
 #include <IMU.h>
 #include <JoystickAdapter.h>
+#include <KinovaArm.h>
 #include <Laser.h>
 #include <Lidar3D.h>
 #include <OmniRobot.h>
@@ -109,7 +111,9 @@ public:
 
 	virtual RoboCompWebots2Robocomp::ObjectPose Webots2Robocomp_getObjectPose(std::string DEF) = 0;
 	virtual void Webots2Robocomp_resetWebots() = 0;
+	virtual void Webots2Robocomp_setArmJointsInstant(RoboCompKinovaArm::TJointAngles angles) = 0;
 	virtual void Webots2Robocomp_setDoorAngle(float angle) = 0;
+	virtual void Webots2Robocomp_setObjectPose(std::string DEF, RoboCompWebots2Robocomp::ObjectPose pose) = 0;
 	virtual void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path) = 0;
 
 	virtual void JoystickAdapter_sendData (RoboCompJoystickAdapter::TData data) = 0;
@@ -118,6 +122,7 @@ public:
 protected:
 	std::unordered_map<std::string, std::unique_ptr<GRAFCETStep>> states;
 	ConfigLoader configLoader;
+	FPSCounter fps;
 
 
 

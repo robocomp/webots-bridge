@@ -95,6 +95,7 @@
 #include <Gridder.h>
 #include <IMU.h>
 #include <JoystickAdapter.h>
+#include <KinovaArm.h>
 #include <Laser.h>
 #include <Lidar3D.h>
 #include <OmniRobot.h>

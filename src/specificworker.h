@@ -122,7 +122,8 @@ public:
 	void Webots2Robocomp_resetWebots();
 	void Webots2Robocomp_setDoorAngle(float angle);
 	void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
-
+    void Webots2Robocomp_setArmJointsInstant(RoboCompKinovaArm::TJointAngles angles){};
+	void Webots2Robocomp_setObjectPose(std::string DEF, RoboCompWebots2Robocomp::ObjectPose pose){};
 	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
 public slots:
@@ -220,6 +221,7 @@ private:
         bool delay = false;
         bool do_joystick = true;
         bool points3D = false;
+        bool camera360 = false;
         bool humans = false;
     };
     PARAMS pars;

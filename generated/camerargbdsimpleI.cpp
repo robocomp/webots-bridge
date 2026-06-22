@@ -21,82 +21,71 @@
 CameraRGBDSimpleI::CameraRGBDSimpleI(GenericWorker *_worker, const size_t id): worker(_worker), id(id)
 {
 	getAllHandlers = {
-		[this](auto &a) { return worker->CameraRGBDSimple_getAll(a); }
+		[this](auto &a) -> RoboCompCameraRGBDSimple::TRGBD {if (worker != nullptr) return worker->CameraRGBDSimple_getAll(a); else throw std::runtime_error("Worker is null");}
 	};
 
 	getDepthHandlers = {
-		[this](auto &a) { return worker->CameraRGBDSimple_getDepth(a); }
+		[this](auto &a) -> RoboCompCameraRGBDSimple::TDepth {if (worker != nullptr) return worker->CameraRGBDSimple_getDepth(a); else throw std::runtime_error("Worker is null");}
 	};
 
 	getImageHandlers = {
-		[this](auto &a) { return worker->CameraRGBDSimple_getImage(a); }
+		[this](auto &a) -> RoboCompCameraRGBDSimple::TImage {if (worker != nullptr) return worker->CameraRGBDSimple_getImage(a); else throw std::runtime_error("Worker is null");}
 	};
 
 	getPointsHandlers = {
-		[this](auto &a) { return worker->CameraRGBDSimple_getPoints(a); }
+		[this](auto &a) -> RoboCompCameraRGBDSimple::TPoints {if (worker != nullptr) return worker->CameraRGBDSimple_getPoints(a); else throw std::runtime_error("Worker is null");}
 	};
 
 }
-
 
 CameraRGBDSimpleI::~CameraRGBDSimpleI()
 {
 }
 
-
 RoboCompCameraRGBDSimple::TRGBD CameraRGBDSimpleI::getAll(std::string camera, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getAllHandlers.size())
-		return  getAllHandlers[id](camera);
-	else
-		throw std::out_of_range("Invalid getAll id: " + std::to_string(id));
-
+	return getAllHandlers.at(id)(camera);
 }
 
 RoboCompCameraRGBDSimple::TDepth CameraRGBDSimpleI::getDepth(std::string camera, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getDepthHandlers.size())
-		return  getDepthHandlers[id](camera);
-	else
-		throw std::out_of_range("Invalid getDepth id: " + std::to_string(id));
-
+	return getDepthHandlers.at(id)(camera);
 }
 
 RoboCompCameraRGBDSimple::TImage CameraRGBDSimpleI::getImage(std::string camera, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getImageHandlers.size())
-		return  getImageHandlers[id](camera);
-	else
-		throw std::out_of_range("Invalid getImage id: " + std::to_string(id));
-
+	return getImageHandlers.at(id)(camera);
 }
 
 RoboCompCameraRGBDSimple::TPoints CameraRGBDSimpleI::getPoints(std::string camera, const Ice::Current&)
 {
-
+    if (!worker)
+        throw std::runtime_error("Worker is null");
+        
     #ifdef HIBERNATION_ENABLED
 		worker->hibernationTick();
 	#endif
     
-	if (id < getPointsHandlers.size())
-		return  getPointsHandlers[id](camera);
-	else
-		throw std::out_of_range("Invalid getPoints id: " + std::to_string(id));
-
+	return getPointsHandlers.at(id)(camera);
 }
-

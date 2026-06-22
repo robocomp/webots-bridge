@@ -22,6 +22,7 @@
 // Ice includes
 #include <Ice/Ice.h>
 #include <IMU.h>
+#include <QPointer>
 
 #include "../src/specificworker.h"
 
@@ -41,7 +42,7 @@ public:
 
 private:
 
-	GenericWorker *worker;
+	QPointer<GenericWorker> worker;
 	size_t id;
 
 	// Array handlers for each method
