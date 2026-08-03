@@ -19,11 +19,32 @@ Endpoints.JoystickAdapterPrefix = ""
 # Proxies for publishes interfaces
 Proxies.FullPoseEstimationPubPrefix = ""
 
-Period.Compute = 16
+# Step/actuation rate. This is what bounds how quickly a setSpeedBase command
+# reaches the wheels, so lower it to tighten the control loop. Must be a multiple
+# of the world's basicTimeStep (16 in Shadow_v2.wbt).
+Period.Compute = 8
+
+# Sampling rate for the heavy sensors (lidars, 360 camera, zed). Independent of
+# Period.Compute, so the loop above can be made faster without multiplying point
+# cloud and image processing cost. Clamped up to Period.Compute if set lower.
+# Defaults to Period.Compute when absent.
+Period.Sensors = 32
+
 Period.Emergency = 500
 Camera.ZED.points3D = False
 
 Component.Debug.Verbose = true
+
+# Give OmniRobot its own dispatch thread. Without this all adapters share the
+# single default server thread pool, so a setSpeedBase/getBaseState call queues
+# behind whatever lidar or camera call is being marshalled at that instant.
+omnirobot.ThreadPool.Size = "2"
+omnirobot.ThreadPool.SizeMax = "4"
+
+# Shared pool for the remaining adapters: still enough that a large Lidar3D or
+# Camera360 payload does not serialise the small IMU/VisualElements calls.
+Ice.ThreadPool.Server.Size = "4"
+Ice.ThreadPool.Server.SizeMax = "8"
 
 Ice.Warn.Connections = "0"
 Ice.Trace.Network = "0"

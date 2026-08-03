@@ -50,6 +50,12 @@
 #include "fixedsizedeque.h"
 #include <atomic>
 #include <chrono>
+#include <mutex>
+#include <condition_variable>
+#include <functional>
+#include <map>
+#include <string>
+#include <vector>
 
 using namespace Eigen;
 using namespace std;
@@ -179,6 +185,65 @@ private:
 	webots::Camera* zed;
 	webots::RangeFinder* zedRangeFinder;
 	webots::Node* controllableDoor;
+    webots::Field* robotRotationField = nullptr;
+    webots::Field* robotTranslationField = nullptr;
+
+    // --- OmniRobot RPC decoupling ------------------------------------------------
+    // The Webots libController API must only be touched from the thread that calls
+    // robot->step(). Supervisor getters block until the simulator answers, so an Ice
+    // servant thread calling them lands anywhere inside the current step and the RPC
+    // latency swings between ~0 and one full period. Servants therefore only touch
+    // these snapshots; compute() is the single point that talks to Webots.
+    struct SpeedCommand { float advx = 0.f, advz = 0.f, rot = 0.f; };
+    std::mutex speed_command_mutex;
+    SpeedCommand speed_command;
+    bool speed_command_pending = false;
+
+    std::mutex base_state_mutex;
+    RoboCompGenericBase::TBaseState base_state{};
+
+    void apply_pending_speed_command();
+    void update_base_state(const double *position, const Eigen::Vector2f &velocity_local, double rot_velocity);
+
+    // --- Deferred Webots work ----------------------------------------------------
+    // Servants that need to *write* to the simulation queue a closure here; compute()
+    // drains the queue in the Webots thread just before stepping.
+    std::mutex webots_tasks_mutex;
+    std::vector<std::function<void()>> webots_tasks;
+    void post_webots_task(std::function<void()> task);
+    void run_webots_tasks();
+
+    // --- IMU snapshot ------------------------------------------------------------
+    std::mutex imu_mutex;
+    RoboCompIMU::DataImu imu_data{};
+    void update_imu_data(long timestamp);
+
+    // --- VisualElements snapshot -------------------------------------------------
+    // Also removes the race on humanObjects, which compute() rewrites in
+    // parseHumanObjects() while a servant thread was iterating it.
+    std::mutex visual_objects_mutex;
+    RoboCompVisualElements::TObjects visual_objects;
+    void update_visual_objects();
+
+    // --- Object pose cache -------------------------------------------------------
+    // getObjectPose() takes an arbitrary DEF, so it cannot be snapshotted up front.
+    // Instead each DEF is registered on first use and refreshed every cycle from then
+    // on: only the very first call for a given DEF waits for the Webots thread.
+    struct TrackedObject
+    {
+        RoboCompWebots2Robocomp::ObjectPose pose{};
+        bool resolved = false;      // compute() has looked this DEF up at least once
+    };
+    struct TrackedObjectHandles     // compute()-thread only, never locked
+    {
+        webots::Field *translation = nullptr;
+        webots::Field *rotation = nullptr;
+    };
+    std::mutex object_poses_mutex;
+    std::condition_variable object_poses_cv;
+    std::map<std::string, TrackedObject> object_poses;
+    std::map<std::string, TrackedObjectHandles> object_handles;
+    void update_object_poses();
 
     void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, long timestamp);
     void receiving_cameraRGBData(webots::Camera* _camera, long timestamp);
@@ -215,6 +280,13 @@ private:
     // Webots2RoboComp interface
     void moveHumanToNextTarget(int humanId);
     void humansMovement();
+    void set_path_to_human(int humanId, const RoboCompGridder::TPath &path);
+
+    // Sampling period (ms) for the heavy sensors: lidars, 360 camera, zed. Decoupled
+    // from Period.Compute so the control/actuation loop can step fast without
+    // reprocessing point clouds and images at the same rate.
+    int sensor_period = 0;
+    double next_sensor_sample_ms = 0.0;   // next simulation time a sample is due
 
     struct PARAMS
     {

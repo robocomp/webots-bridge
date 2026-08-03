@@ -82,11 +82,31 @@ void SpecificWorker::initialize()
          try { pars.points3D = configLoader.get<bool>("Camera.ZED.points3D"); } catch(...) {}
          try { pars.humans = configLoader.get<bool>("Humans"); } catch(...) {}
 
+        // Heavy sensors sample independently of the step rate; absent from the config
+        // they follow it, which is the historical behaviour.
+        const int compute_period = this->getPeriod("Compute");
+        sensor_period = compute_period;
+        try { sensor_period = configLoader.get<int>("Period.Sensors"); } catch(...) {}
+        if(sensor_period < compute_period)
+        {
+            std::cout << "Period.Sensors (" << sensor_period << ") is below Period.Compute ("
+                      << compute_period << "); clamping to Period.Compute." << std::endl;
+            sensor_period = compute_period;
+        }
+        std::cout << "Compute period: " << compute_period << " ms, sensor period: "
+                  << sensor_period << " ms" << std::endl;
+
         // pause variable
         last_read.store(std::chrono::high_resolution_clock::now());
 
         robot = new webots::Supervisor();
         robotNode = robot->getFromDef("shadow");
+        // Resolved once: getField() is a name lookup against the simulator.
+        if(robotNode)
+        {
+            robotRotationField = robotNode->getField("rotation");
+            robotTranslationField = robotNode->getField("translation");
+        }
 
         // Inicializa los motores y los sensores de posición.
         const char *motorNames[4] = {"wheel2", "wheel1", "wheel4", "wheel3"};
@@ -105,26 +125,28 @@ void SpecificWorker::initialize()
         zed = robot->getCamera("zed");
 
         // Activa los componentes en la simulación si los detecta.
-        if(lidar_helios) lidar_helios->enable(this->getPeriod("Compute"));
-        if(lidar_pearl) lidar_pearl->enable(this->getPeriod("Compute"));
-        if(camera) camera->enable(this->getPeriod("Compute"));
-        if(range_finder) range_finder->enable(this->getPeriod("Compute"));
+        // Heavy sensors run at sensor_period; the IMU and wheel encoders are cheap and
+        // feed the control loop, so they stay at the step rate.
+        if(lidar_helios) lidar_helios->enable(sensor_period);
+        if(lidar_pearl) lidar_pearl->enable(sensor_period);
+        if(camera) camera->enable(sensor_period);
+        if(range_finder) range_finder->enable(sensor_period);
         if(camera360_1 && camera360_2){
-            camera360_1->enable(this->getPeriod("Compute"));
-            camera360_2->enable(this->getPeriod("Compute"));
+            camera360_1->enable(sensor_period);
+            camera360_2->enable(sensor_period);
         }
         for (int i = 0; i < 4; i++)
         {
             motors[i] = robot->getMotor(motorNames[i]);
             ps[i] = motors[i]->getPositionSensor();
-            ps[i]->enable(this->getPeriod("Compute"));
+            ps[i]->enable(compute_period);
             motors[i]->setPosition(INFINITY); // Modo de velocidad.
             motors[i]->setVelocity(0);
         }
-        if(accelerometer) accelerometer->enable(this->getPeriod("Compute"));
-        if(gyroscope) gyroscope->enable(this->getPeriod("Compute"));
-        if (zedRangeFinder) zedRangeFinder->enable(this->getPeriod("Compute"));
-        if (zed) zed->enable(this->getPeriod("Compute"));
+        if(accelerometer) accelerometer->enable(compute_period);
+        if(gyroscope) gyroscope->enable(compute_period);
+        if (zedRangeFinder) zedRangeFinder->enable(sensor_period);
+        if (zed) zed->enable(sensor_period);
 
         // Controllable Door
         controllableDoor = robot->getFromDef("CONTROLLABLE_DOOR");
@@ -136,21 +158,45 @@ void SpecificWorker::compute()
     // Getting simulation timestamp
     //double now = robot->getTime() * 1000;
     const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    // Getting the data from simulation.
-    if(robot) receiving_robotSpeed(robot, now);
-    if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue, now);
-    if(lidar_pearl) receiving_lidarData("bpearl", lidar_pearl, double_buffer_pearl, pearl_delay_queue, now);
-    //if(camera) receiving_cameraRGBData(camera, now);
-    //if(range_finder) receiving_depthImageData(range_finder, now);
-    if(pars.camera360 and camera360_1 and camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
-    if(zedRangeFinder && zed) receiving_cameraRGBD(zed, zedRangeFinder, zedImage, now);
+    // Webots only refreshes a device's data once per its sampling period, so when the
+    // step rate is faster than sensor_period the extra passes would reprocess the same
+    // point clouds and images. Skip them.
+    const double sim_now_ms = robot != nullptr ? robot->getTime() * 1000.0 : 0.0;
+    const bool new_sensor_sample = sim_now_ms >= next_sensor_sample_ms;
+    if(new_sensor_sample)
+        next_sensor_sample_ms = sim_now_ms + sensor_period;
 
-    qInfo() << "compute";
+    // Getting the data from simulation. The robot pose/speed feeds the control loop,
+    // so it is refreshed every step regardless of the sensor rate.
+    if(robot) receiving_robotSpeed(robot, now);
+    if(new_sensor_sample)
+    {
+        if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue, now);
+        if(lidar_pearl) receiving_lidarData("bpearl", lidar_pearl, double_buffer_pearl, pearl_delay_queue, now);
+        //if(camera) receiving_cameraRGBData(camera, now);
+        //if(range_finder) receiving_depthImageData(range_finder, now);
+        if(camera360_1 and camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
+        if(zedRangeFinder && zed) receiving_cameraRGBD(zed, zedRangeFinder, zedImage, now);
+    }
+
+    // Refresh the snapshots served by the RPC servants, then drain any work they
+    // queued. Everything that talks to Webots happens on this thread.
+    update_imu_data(now);
+    update_object_poses();
+    run_webots_tasks();
+
+    // Push any speed command received over RPC since the last step.
+    apply_pending_speed_command();
+
     robot->step(getPeriod("Compute"));
 
 //    std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 
-    if(pars.humans) parseHumanObjects();
+    if(pars.humans)
+    {
+        parseHumanObjects();
+        update_visual_objects();
+    }
 
     //humansMovement();
     fps.print("FPS:");
@@ -211,6 +257,7 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
 
     // -------------------- Imagen RGB --------------------
     const unsigned char *webotsImageData = _camera->getImage();
+    if (webotsImageData == nullptr) return;   // no sample yet (first cycle, before any step)
     cv::Mat imageMatBGRA(height, width, CV_8UC4, (void*)webotsImageData);
 
     cv::Mat imageMatRGB;
@@ -299,15 +346,25 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
 
     const unsigned char* webotsImageData1 = _camera1->getImage();
     const unsigned char* webotsImageData2 = _camera2->getImage();
+    if (webotsImageData1 == nullptr or webotsImageData2 == nullptr) return;
     cv::Mat img_1 = cv::Mat(cv::Size(_camera1->getWidth(), _camera1->getHeight()), CV_8UC4);
     cv::Mat img_2 = cv::Mat(cv::Size(_camera2->getWidth(), _camera2->getHeight()), CV_8UC4);
     img_1.data = (uchar *)webotsImageData1;
     cv::cvtColor(img_1, img_1, cv::COLOR_RGBA2RGB);
     img_2.data = (uchar *)webotsImageData2;
     cv::cvtColor(img_2, img_2, cv::COLOR_RGBA2RGB);
-    cv::Mat img_final = cv::Mat(cv::Size(_camera1->getWidth()*2, _camera1->getHeight()), CV_8UC3);
-    img_1.copyTo(img_final(cv::Rect(0, 0, _camera1->getWidth(), _camera1->getHeight())));
-    img_2.copyTo(img_final(cv::Rect(_camera1->getWidth(), 0, _camera1->getWidth(), _camera2->getHeight())));
+    // Plain [cam1 | cam2] concat puts the SEAM between the two 180° captures at the panorama centre —
+    // i.e. cam1's own centre (its optical axis) sits a quarter-width off-centre, not in the middle of
+    // the final image. Slide the whole composite right by half a camera's width (a circular roll) so
+    // cam1 ends up centred and cam2 — which was already spanning the panorama's wrap seam at column 0 —
+    // gets split across both edges instead: new[0:w/2]=cam2's tail, new[w/2:w/2+w]=cam1 (centred),
+    // new[w/2+w:2w]=cam2's head.
+    const int w = _camera1->getWidth();
+    const int shift = w / 2;
+    cv::Mat img_final = cv::Mat(cv::Size(w * 2, _camera1->getHeight()), CV_8UC3);
+    img_2(cv::Rect(w - shift, 0, shift, _camera2->getHeight())).copyTo(img_final(cv::Rect(0, 0, shift, _camera1->getHeight())));
+    img_1.copyTo(img_final(cv::Rect(shift, 0, w, _camera1->getHeight())));
+    img_2(cv::Rect(0, 0, w - shift, _camera2->getHeight())).copyTo(img_final(cv::Rect(shift + w, 0, w - shift, _camera1->getHeight())));
 
     // Asignar la imagen RGB 360 al tipo TImage de Robocomp
     newImage360.image.resize(img_final.total()*img_final.elemSize());
@@ -377,8 +434,52 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     pose_data.rot = static_cast<float>(shadow_velocity[5]); // CW positive 
 
     pose_data.timestamp = timestamp;
-    this->fullposeestimationpub_pubproxy->newFullPose(pose_data);
 
+    // Refresh the snapshot served by OmniRobot_getBaseState() while we already hold
+    // the freshly read supervisor data, so that RPC never has to query Webots.
+    update_base_state(shadow_position, shadow_velocity_local, shadow_velocity[5]);
+
+    this->fullposeestimationpub_pubproxy->newFullPose(pose_data);
+}
+
+void SpecificWorker::update_base_state(const double *position, const Eigen::Vector2f &velocity_local, double rot_velocity)
+{
+    RoboCompGenericBase::TBaseState state{};
+
+    state.x = static_cast<float>(position[0]);
+    state.z = static_cast<float>(position[1]);
+    state.alpha = robotRotationField != nullptr ? static_cast<float>(robotRotationField->getSFRotation()[3]) : 0.f;
+    state.correctedX = state.x;
+    state.correctedZ = state.z;
+    state.correctedAlpha = state.alpha;
+    state.advVz = velocity_local(1);
+    state.advVx = -velocity_local(0);
+    state.rotV = static_cast<float>(rot_velocity);
+    state.isMoving = std::hypot(state.advVx, state.advVz) > 0.001f or std::fabs(state.rotV) > 0.001f;
+
+    const std::lock_guard<std::mutex> lock(base_state_mutex);
+    base_state = state;
+}
+
+// Called from servant threads: queue a closure to be run in the Webots thread.
+void SpecificWorker::post_webots_task(std::function<void()> task)
+{
+    const std::lock_guard<std::mutex> lock(webots_tasks_mutex);
+    webots_tasks.push_back(std::move(task));
+}
+
+// Called from compute(): drain the queue outside the lock, so a task that takes a
+// while cannot block servants trying to post new ones.
+void SpecificWorker::run_webots_tasks()
+{
+    std::vector<std::function<void()>> tasks;
+    {
+        const std::lock_guard<std::mutex> lock(webots_tasks_mutex);
+        if (webots_tasks.empty()) return;
+        tasks.swap(webots_tasks);
+    }
+    for (auto &task : tasks)
+        task();
 }
 
 double SpecificWorker::generate_noise(double stddev)
@@ -394,6 +495,7 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
 
     const float *rangeImage = _lidar->getRangeImage();
+    if (rangeImage == nullptr) return;   // no sample yet (first cycle, before any step)
     int horizontalResolution = _lidar->getHorizontalResolution();
     int verticalResolution = _lidar->getNumberOfLayers();
     double minRange = _lidar->getMinRange();
@@ -595,20 +697,24 @@ RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::str
     return double_buffer_zed.get_idemp();
 }
 
+// The partial getters project out the one member they return: copying the whole
+// TRGBD (image + depth + points) to hand back a third of it costs several MB per call.
 RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    return double_buffer_zed.get_idemp().depth;
+    return double_buffer_zed.get_idemp_with([](const auto &rgbd) { return rgbd.depth; });
 }
 
 RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::string camera)
 {
-    return double_buffer_zed.get_idemp().image;
+    last_read.store(std::chrono::high_resolution_clock::now());
+    return double_buffer_zed.get_idemp_with([](const auto &rgbd) { return rgbd.image; });
 }
 
 RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std::string camera)
 {
-    return double_buffer_zed.get_idemp().points;
+    last_read.store(std::chrono::high_resolution_clock::now());
+    return double_buffer_zed.get_idemp_with([](const auto &rgbd) { return rgbd.points; });
 }
 
 #pragma endregion CamerRGBDSimple
@@ -715,9 +821,9 @@ void SpecificWorker::OmniRobot_getBaseState(RoboCompGenericBase::TBaseState &sta
 {
     last_read.store(std::chrono::high_resolution_clock::now());
 
-    state.x = robotNode->getField("translation")->getSFVec3f()[0];
-    state.z = robotNode->getField("translation")->getSFVec3f()[1];
-    state.alpha = robotNode->getField("rotation")->getSFRotation()[3];
+    // Served from the snapshot refreshed by compute(); no Webots call here.
+    const std::lock_guard<std::mutex> lock(base_state_mutex);
+    state = base_state;
 }
 
 void SpecificWorker::OmniRobot_resetOdometer()
@@ -741,55 +847,80 @@ void SpecificWorker::OmniRobot_setOdometerPose(int x, int z, float alpha)
 void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    double speeds[4];
 
-    advz *= 0.001;
-    advx *= 0.001;
-
-    speeds[0] = 1.0 / WHEEL_RADIUS * (advz - advx + (LX + LY) * rot);
-    speeds[1] = 1.0 / WHEEL_RADIUS * (advz + advx - (LX + LY) * rot);
-    speeds[2] = 1.0 / WHEEL_RADIUS * (advz + advx + (LX + LY) * rot);
-    speeds[3] = 1.0 / WHEEL_RADIUS * (advz - advx - (LX + LY) * rot);
-    printf("Speeds: vx=%.2f[m/s] vy=%.2f[m/s] ω=%.2f[rad/s]\n", advx, advz, rot);
-    for (int i = 0; i < 4; i++)
-    {
-        motors[i]->setVelocity(speeds[i]);
-    }
+    // Only queue the command. Webots buffers actuator requests until the next
+    // wb_robot_step() anyway, so applying it in compute() costs no extra actuation
+    // latency and keeps this call at memory-copy speed.
+    const std::lock_guard<std::mutex> lock(speed_command_mutex);
+    speed_command = {advx, advz, rot};
+    speed_command_pending = true;
 }
 
 void SpecificWorker::OmniRobot_stopBase()
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    for (int i = 0; i < 4; i++)
+
+    const std::lock_guard<std::mutex> lock(speed_command_mutex);
+    speed_command = {0.f, 0.f, 0.f};
+    speed_command_pending = true;
+}
+
+// Runs in the compute() thread, just before robot->step().
+void SpecificWorker::apply_pending_speed_command()
+{
+    SpeedCommand cmd;
     {
-        motors[i]->setVelocity(0);
+        const std::lock_guard<std::mutex> lock(speed_command_mutex);
+        if (not speed_command_pending) return;
+        cmd = speed_command;
+        speed_command_pending = false;
     }
+
+    const double advx = cmd.advx * 0.001;   // mm/s -> m/s
+    const double advz = cmd.advz * 0.001;
+
+    const double speeds[4] = {1.0 / WHEEL_RADIUS * (advz - advx + (LX + LY) * cmd.rot),
+                              1.0 / WHEEL_RADIUS * (advz + advx - (LX + LY) * cmd.rot),
+                              1.0 / WHEEL_RADIUS * (advz + advx + (LX + LY) * cmd.rot),
+                              1.0 / WHEEL_RADIUS * (advz - advx - (LX + LY) * cmd.rot)};
+
+    for (int i = 0; i < 4; i++)
+        motors[i]->setVelocity(speeds[i]);
 }
 
 #pragma endregion OmniRobot
 
 #pragma region VisualElements
 
-RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects)
+// Runs in the compute() thread, right after parseHumanObjects() has refreshed the map.
+void SpecificWorker::update_visual_objects()
 {
-    last_read.store(std::chrono::high_resolution_clock::now());
     RoboCompVisualElements::TObjects objectsList;
 
-    for (const auto &entry : humanObjects) {
-        RoboCompVisualElements::TObject object;
-
-        int id = entry.first;
+    for (const auto &entry : humanObjects)
+    {
         webots::Node *node = entry.second.node;
+        if (node == nullptr) continue;
+
         const double *position = node->getPosition();
 
-        object.id = id;
+        RoboCompVisualElements::TObject object;
+        object.id = entry.first;
         object.x = position[0];
         object.y = position[1];
 
         objectsList.objects.push_back(object);
     }
 
-    return objectsList;
+    const std::lock_guard<std::mutex> lock(visual_objects_mutex);
+    visual_objects = std::move(objectsList);
+}
+
+RoboCompVisualElements::TObjects SpecificWorker::VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects)
+{
+    last_read.store(std::chrono::high_resolution_clock::now());
+    const std::lock_guard<std::mutex> lock(visual_objects_mutex);
+    return visual_objects;
 }
 void SpecificWorker::VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects)
 {
@@ -861,6 +992,17 @@ void SpecificWorker::moveHumanToNextTarget(int humanId)
 
 void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path)
 {
+    last_read.store(std::chrono::high_resolution_clock::now());
+
+    // Deferred: this both reads the supervisor and mutates humanObjects, which
+    // compute() rewrites. Running it there makes the call return immediately and
+    // removes the race on the map.
+    post_webots_task([this, humanId, path = std::move(path)]
+                     { set_path_to_human(humanId, path); });
+}
+
+void SpecificWorker::set_path_to_human(int humanId, const RoboCompGridder::TPath &path)
+{
     //static bool overwrite_path = false;
 
     if(humanObjects[humanId].node == nullptr)
@@ -873,9 +1015,10 @@ void SpecificWorker::Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder
     {
         RoboCompGridder::TPath transformed_path;
 
-        auto x = robotNode->getField("translation")->getSFVec3f()[0] * 1000;
-        auto y = robotNode->getField("translation")->getSFVec3f()[1] * 1000;
-        auto rot = robotNode->getField("rotation")->getSFRotation();
+        if(robotTranslationField == nullptr or robotRotationField == nullptr) return;
+        auto x = robotTranslationField->getSFVec3f()[0] * 1000;
+        auto y = robotTranslationField->getSFVec3f()[1] * 1000;
+        auto rot = robotRotationField->getSFRotation();
 
         Eigen::Vector3d axis(rot[0], rot[1], rot[2]);
         Eigen::AngleAxisd angleAxis(rot[3], axis.normalized());
@@ -910,7 +1053,8 @@ void SpecificWorker::Webots2Robocomp_resetWebots()
 
 void SpecificWorker::Webots2Robocomp_setDoorAngle(float angle)
 {
-	setDoorAperture(angle);
+    last_read.store(std::chrono::high_resolution_clock::now());
+    post_webots_task([this, angle] { setDoorAperture(angle); });
 }
 
 RoboCompWebots2Robocomp::Quaternion axisAngleToQuaternion(const webots::Field &rotation) {
@@ -941,30 +1085,79 @@ RoboCompWebots2Robocomp::Quaternion axisAngleToQuaternion(const webots::Field &r
     return q;
 }
 
+// Runs in the compute() thread: resolve any newly requested DEF, then refresh every
+// tracked pose. The Webots calls happen with no lock held, so servants reading the
+// cache are never blocked by them.
+void SpecificWorker::update_object_poses()
+{
+    std::vector<std::string> defs;
+    {
+        const std::lock_guard<std::mutex> lock(object_poses_mutex);
+        if (object_poses.empty()) return;
+        defs.reserve(object_poses.size());
+        for (const auto &[def, _] : object_poses)
+            defs.push_back(def);
+    }
+
+    std::vector<TrackedObject> refreshed(defs.size());
+    for (size_t i = 0; i < defs.size(); ++i)
+    {
+        const std::string &def = defs[i];
+        refreshed[i].resolved = true;   // resolved means "compute() has tried", not "found"
+
+        auto handles = object_handles.find(def);
+        if (handles == object_handles.end())
+        {
+            TrackedObjectHandles h;
+            if (webots::Node *node = robot->getFromDef(def); node != nullptr)
+            {
+                h.translation = node->getField("translation");
+                h.rotation = node->getField("rotation");
+                if (h.translation == nullptr or h.rotation == nullptr)
+                    std::cout << "Object node dont have postion or rotation" << std::endl;
+            }
+            else
+                std::cout << "Object with DEF:" << def << "not found" << std::endl;
+
+            handles = object_handles.emplace(def, h).first;
+        }
+
+        if (handles->second.translation == nullptr or handles->second.rotation == nullptr)
+            continue;   // leaves a zeroed pose, as the original code returned
+
+        const double *position = handles->second.translation->getSFVec3f();
+        refreshed[i].pose.position = RoboCompWebots2Robocomp::Vector3{
+            static_cast<float>(position[0] * 1000),
+            static_cast<float>(position[1] * 1000),
+            static_cast<float>(position[2] * 1000),
+        };
+        refreshed[i].pose.orientation = axisAngleToQuaternion(*handles->second.rotation);
+    }
+
+    {
+        const std::lock_guard<std::mutex> lock(object_poses_mutex);
+        for (size_t i = 0; i < defs.size(); ++i)
+            object_poses[defs[i]] = refreshed[i];
+    }
+    object_poses_cv.notify_all();
+}
+
 RoboCompWebots2Robocomp::ObjectPose SpecificWorker::Webots2Robocomp_getObjectPose(std::string DEF)
 {
-    RoboCompWebots2Robocomp::ObjectPose ret{};
+    last_read.store(std::chrono::high_resolution_clock::now());
 
-    webots::Node* object_node = robot->getFromDef(DEF);
-    if (object_node == nullptr) {
-        std::cout << "Object with DEF:" << DEF << "not found" << std::endl;
-        return ret;
-    }
-    auto object_position = object_node->getField("translation");
-    auto object_rotation = object_node->getField("rotation");
-    if (object_position == nullptr or object_rotation == nullptr) {
-        std::cout << "Object node dont have postion or rotation" << std::endl;
-        return ret;
-    }
-    ret.position = RoboCompWebots2Robocomp::Vector3{
-        static_cast<float>(object_position->getSFVec3f()[0] * 1000),
-        static_cast<float>(object_position->getSFVec3f()[1] * 1000),
-        static_cast<float>(object_position->getSFVec3f()[2] * 1000),
-    };
+    std::unique_lock<std::mutex> lock(object_poses_mutex);
+    TrackedObject &tracked = object_poses[DEF];   // registers the DEF on first use
+    if (tracked.resolved)
+        return tracked.pose;
 
-    ret.orientation = axisAngleToQuaternion(*object_rotation);
-
-	return ret;
+    // First ever request for this DEF: nothing cached yet, so wait for one compute()
+    // cycle to resolve it. Bounded, and only ever paid once per DEF.
+    hibernation = true;   // make sure the loop is at full rate while we wait
+    object_poses_cv.wait_for(lock, std::chrono::seconds(1), [&tracked] { return tracked.resolved; });
+    if (not tracked.resolved)
+        std::cout << "Timed out resolving object with DEF:" << DEF << std::endl;
+    return tracked.pose;
 }
 
 #pragma endregion Webots2Robocomp Methods
@@ -1004,45 +1197,51 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 
 #pragma region IMU
 
+// Runs in the compute() thread. The accelerometer and gyro are sampled at the
+// compute period, so a per-cycle snapshot loses no information.
+void SpecificWorker::update_imu_data(long timestamp)
+{
+    RoboCompIMU::DataImu data{};
+
+    if (accelerometer != nullptr)
+        if (const double *values = accelerometer->getValues(); values != nullptr)
+            data.acc = {(float)values[0], (float)values[1], (float)values[2], timestamp};
+
+    if (gyroscope != nullptr)
+        if (const double *values = gyroscope->getValues(); values != nullptr)
+            data.gyro = {(float)values[0], (float)values[1], (float)values[2], timestamp};
+
+    if (robotNode != nullptr)
+    {
+        const auto [roll, pitch, yaw] = rotationMatrixToEulerZYX(robotNode->getOrientation());
+        data.rot = {roll, pitch, yaw, timestamp};
+    }
+
+    data.temperature = 0.f;
+
+    const std::lock_guard<std::mutex> lock(imu_mutex);
+    imu_data = data;
+}
+
 RoboCompIMU::Acceleration SpecificWorker::IMU_getAcceleration()
 {
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    const double* accelerometerValues = accelerometer->getValues();
-    RoboCompIMU::Acceleration ret{
-            (float)accelerometerValues[0],
-            (float)accelerometerValues[1],
-            (float)accelerometerValues[2],
-            (long)timestamp
-    };
-
-    return ret;
+    last_read.store(std::chrono::high_resolution_clock::now());
+    const std::lock_guard<std::mutex> lock(imu_mutex);
+    return imu_data.acc;
 }
 
 RoboCompIMU::Gyroscope SpecificWorker::IMU_getAngularVel()
 {
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    RoboCompIMU::Gyroscope ret
-    {
-        (float)gyroscope->getValues()[0],
-        (float)gyroscope->getValues()[1],
-        (float)gyroscope->getValues()[2],
-         (long)timestamp
-    };
-    
-    return ret;
+    last_read.store(std::chrono::high_resolution_clock::now());
+    const std::lock_guard<std::mutex> lock(imu_mutex);
+    return imu_data.gyro;
 }
 
 RoboCompIMU::DataImu SpecificWorker::IMU_getDataImu()
 {
-    RoboCompIMU::DataImu ret
-    {
-        .acc = IMU_getAcceleration(),
-        .gyro = IMU_getAngularVel(),
-        .mag = IMU_getMagneticFields(),
-        .rot = IMU_getOrientation(),
-        .temperature = 0.f
-    };
-    return ret;
+    last_read.store(std::chrono::high_resolution_clock::now());
+    const std::lock_guard<std::mutex> lock(imu_mutex);
+    return imu_data;
 }
 
 RoboCompIMU::Magnetic SpecificWorker::IMU_getMagneticFields()
@@ -1054,18 +1253,9 @@ RoboCompIMU::Magnetic SpecificWorker::IMU_getMagneticFields()
 
 RoboCompIMU::Orientation SpecificWorker::IMU_getOrientation()
 {
-    auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    auto orientation = robotNode->getOrientation();
-    auto [roll, pitch, yaw] = rotationMatrixToEulerZYX(orientation);
-
-    RoboCompIMU::Orientation ret
-    {
-        roll,
-        pitch,
-        yaw,
-        (long)timestamp
-    };
-    return ret;
+    last_read.store(std::chrono::high_resolution_clock::now());
+    const std::lock_guard<std::mutex> lock(imu_mutex);
+    return imu_data.rot;
 }
 
 std::tuple<float, float, float> SpecificWorker::rotationMatrixToEulerZYX(const double* R)
