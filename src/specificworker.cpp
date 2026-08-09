@@ -148,8 +148,8 @@ void SpecificWorker::initialize()
         if (zedRangeFinder) zedRangeFinder->enable(sensor_period);
         if (zed) zed->enable(sensor_period);
 
-        // Controllable Door
-        controllableDoor = robot->getFromDef("CONTROLLABLE_DOOR");
+        // Doors are resolved lazily, by DEF, on the first setDoorAngle that names them (see
+        // setDoorAperture) — there is no single "the" controllable door any more.
     }
 }
 
@@ -394,12 +394,10 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     // happened. See update_sim_wall_rate and the note on sim_wall_rate_ in the header for the
     // measurement that motivated this (6.7% of spurious rotation in room_concept's odometry prior).
     update_sim_wall_rate(_robot->getTime(), timestamp);
-#if BRIDGE_WALL_TIME_VELOCITIES == 2
-    const double k_wall_lin = sim_wall_rate_, k_wall_rot = sim_wall_rate_;
-#elif BRIDGE_WALL_TIME_VELOCITIES == 1
-    const double k_wall_lin = 1.0,            k_wall_rot = sim_wall_rate_;
+#if BRIDGE_WALL_TIME_VELOCITIES
+    const double k_wall = sim_wall_rate_;
 #else
-    const double k_wall_lin = 1.0,            k_wall_rot = 1.0;
+    const double k_wall = 1.0;
 #endif
 
 #if BRIDGE_YAWRATE_DIAG
@@ -446,20 +444,10 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     // angular: the unit mismatch applies identically to translation, it was simply only measured on
     // rotation (which room_concept arbitrates against the room geometry, so it was visible there).
     const Eigen::Vector2f shadow_velocity_local =
-        static_cast<float>(k_wall_lin) * (rt_rotation_matrix.inverse() * shadow_velocity_world);
-    const double shadow_rot_wall = k_wall_rot * shadow_velocity[5];
+        static_cast<float>(k_wall) * (rt_rotation_matrix.inverse() * shadow_velocity_world);
+    const double shadow_rot_wall = k_wall * shadow_velocity[5];
 
-    // Asumimos que el ruido lo pone el cliente
-    // Velocidades puras en mm/s y rad/s
-    // const float velocidad_x = 0.1f; // Ejemplo: 100 mm/s
-    // float velocidad_y = 0.1f; // Ejemplo: 150 mm/s
-    // float alpha = 0.075f; // Ejemplo: 0.05 rad/s
-    //
-    // // Desviación estándar del ruido (ejemplo: 5% del valor de las velocidades)
-    // float ruido_stddev_x = 0.05f * velocidad_x;
-    // float ruido_stddev_y = 0.05f * velocidad_y;
-    // float ruido_stddev_alpha = 0.05f * alpha;
-
+    // Noise, if any, is the consumer's business: see RoomConcept.OdometryNoiseFactor.
     RoboCompFullPoseEstimation::FullPoseEuler pose_data;
 
     // Posición
@@ -1155,10 +1143,12 @@ void SpecificWorker::Webots2Robocomp_resetWebots()
     
 }
 
-void SpecificWorker::Webots2Robocomp_setDoorAngle(float angle)
+void SpecificWorker::Webots2Robocomp_setDoorAngle(std::string DEF, float angle)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    post_webots_task([this, angle] { setDoorAperture(angle); });
+    // The DEF is copied into the task: the caller's string is gone by the time the supervisor thread
+    // runs this, and the lookup itself must happen there (Webots node access is not thread-safe).
+    post_webots_task([this, DEF = std::move(DEF), angle] { setDoorAperture(DEF, angle); });
 }
 
 RoboCompWebots2Robocomp::Quaternion axisAngleToQuaternion(const webots::Field &rotation) {
@@ -1432,13 +1422,29 @@ void SpecificWorker::parseHumanObjects() {
     }
 }
 
-void SpecificWorker::setDoorAperture(float _aperture) {
+// Open/close the hinged door named by its Webots DEF. Runs on the supervisor thread (posted by
+// Webots2Robocomp_setDoorAngle), which is the only thread allowed to touch webots::Node.
+//
+// The DEF is a PARAMETER now, not the single hard-wired CONTROLLABLE_DOOR: a scene has more than one
+// door, and only the caller knows which one it means. An unknown DEF, or a node with no `position`
+// field, is reported and ignored — a request to move a door that is not there must fail loudly and
+// change nothing, never silently move a different one.
+void SpecificWorker::setDoorAperture(const std::string &DEF, float _aperture) {
 
-    std::cout << "[Warning] aperture value " << _aperture << std::endl;
+    if (DEF.empty()) {
+        std::cerr << "[Error] setDoorAngle called with an empty DEF.\n";
+        return;
+    }
 
-    // Check if the door node is available
-    if (!controllableDoor) {
-        std::cerr << "[Error] controllableDoor is not initialized.\n";
+    // Resolved once per DEF and cached: getFromDef walks the scene tree, and this can be called every
+    // control cycle while an affordance servos the door open. A null result is cached too — it means
+    // "this scene has no such node", which does not change while the world is loaded.
+    auto it = doorNodes.find(DEF);
+    if (it == doorNodes.end())
+        it = doorNodes.emplace(DEF, robot->getFromDef(DEF)).first;
+    webots::Node *door = it->second;
+    if (!door) {
+        std::cerr << "[Error] no node with DEF '" << DEF << "' in this world — door not moved.\n";
         return;
     }
 
@@ -1455,16 +1461,19 @@ void SpecificWorker::setDoorAperture(float _aperture) {
 
     float aperture = std::clamp(_aperture, minAperture, maxAperture);
 
-    // Get the "position" field of the door node
-    webots::Field *positionField = controllableDoor->getField("position");
+    // Get the "position" field of the door node. Present on a HingeJoint's jointParameters — a DEF that
+    // names, say, the door's Solid instead of its joint resolves fine above and fails here, so the
+    // message names the DEF: that is the difference between "wrong door" and "wrong node in the door".
+    webots::Field *positionField = door->getField("position");
     if (!positionField) {
-        std::cerr << "[Error] 'position' field not found in the door node.\n";
+        std::cerr << "[Error] node '" << DEF << "' has no 'position' field — it is not a hinge joint "
+                     "(is this the door's Solid rather than its HingeJoint?).\n";
         return;
     }
 
     // Set the door position
     positionField->setSFFloat(aperture);
-    std::cout << "[Info] Door aperture set to " << aperture << " rad.\n";
+    std::cout << "[Info] Door '" << DEF << "' aperture set to " << aperture << " rad.\n";
 }
 
 

@@ -116,25 +116,22 @@ using namespace std;
 //      constant, not the expression, so this comment stays true.
 #define WHEEL_CENTROID_OFFSET 0.0  // [m] 0.0 = off; the measured value is 0.027 (verify the sign)
 
-// A/B TOGGLE for the per-wall-second velocity scaling (see sim_wall_rate_ below).
-//   2 = scale BOTH linear and angular   (as first implemented)
-//   1 = scale ANGULAR only              (rotation is the only channel measured to need it:
-//                                        meas/post was 1.069 on rotation but 0.975 on translation)
-//   0 = off, publish per-simulation-second (historical behaviour)
-// Standing state 2026-08-09: mode 2 fixes rotation (meas/post 1.0685 -> 1.0024) but the localizer's
-// prediction early-exit got WORSE on matched in-place turns (99.4/98.8% -> 94.2/90.7%, over-gate
-// 0.4/0.2% -> 3.6/7.7%) and cmd/post moved 1.004 -> 0.950 for reasons not yet understood. Do not
-// treat mode 2 as settled until an A/B on one protocol -- 3 in-place turns AND ~2 m of straight
-// driving, so BOTH channels are measured -- says which mode wins.
+// Publish velocities in per-WALL-second units (see sim_wall_rate_ below). 1 = on, 0 = off.
+// Kept as a toggle because one question is still open: on sustained pivots the localizer's
+// prediction early-exit reads below the pre-fix baseline (95/91% against 99.4/98.8%) and the scaling
+// does not explain it -- an angular-only variant was A/B'd and came out indistinguishable
+// (94.5/90.3%, gate margins equal to 3 dp), so that variant is gone. The samples were never
+// comparable: the baseline is 42k frames of incidental rotation, every post-fix number a handful of
+// sustained 340-1100 deg pivots. Settling it needs 0 against 1 on ONE protocol, not yet run.
 #ifndef BRIDGE_WALL_TIME_VELOCITIES          // -DBRIDGE_WALL_TIME_VELOCITIES=n overrides
-#define BRIDGE_WALL_TIME_VELOCITIES 2           // A/B'd against mode 1 on matched in-place turns:
-#endif                                          // 95.0/90.8% early exit vs 94.5/90.3%, margins equal
+#define BRIDGE_WALL_TIME_VELOCITIES 1
+#endif
                                                 // to 3 dp. Mode 2 also keeps both velocity channels
                                                 // on ONE clock, which mode 1 does not.
 
 // Set to 1 to emit yawrate_diag.csv (sim_t, wall_ms, yaw_raw, wz, vx_world, vy_world) from
 // receiving_robotSpeed, for the d(yaw)/dt vs getVelocity()[5] check. Off = zero cost.
-#define BRIDGE_YAWRATE_DIAG 1
+#define BRIDGE_YAWRATE_DIAG 0
 #define LINEAR_MAX_SPEED 1.5 // meters per second 
 #define ANGULAR_MAX_SPEED 4.03 //radians per second
 
@@ -197,7 +194,7 @@ public:
 
 	RoboCompWebots2Robocomp::ObjectPose Webots2Robocomp_getObjectPose(std::string DEF);
 	void Webots2Robocomp_resetWebots();
-	void Webots2Robocomp_setDoorAngle(float angle);
+	void Webots2Robocomp_setDoorAngle(std::string DEF, float angle);
 	void Webots2Robocomp_setPathToHuman(int humanId, RoboCompGridder::TPath path);
     void Webots2Robocomp_setArmJointsInstant(RoboCompKinovaArm::TJointAngles angles){};
 	void Webots2Robocomp_setObjectPose(std::string DEF, RoboCompWebots2Robocomp::ObjectPose pose){};
@@ -255,7 +252,10 @@ private:
     webots::Gyro* gyroscope;
 	webots::Camera* zed;
 	webots::RangeFinder* zedRangeFinder;
-	webots::Node* controllableDoor;
+	// DEF -> node cache for setDoorAngle. Replaces the single hard-wired CONTROLLABLE_DOOR: which door
+	// a caller means is now its argument, and getFromDef is walked once per DEF (a null is cached too —
+	// "no such node in this world" does not change while the world is loaded).
+	std::map<std::string, webots::Node*> doorNodes;
     webots::Field* robotRotationField = nullptr;
     webots::Field* robotTranslationField = nullptr;
 
@@ -404,7 +404,7 @@ private:
     Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
     std::tuple<float, float, float> rotationMatrixToEulerZYX(const double* R);
 
-	void setDoorAperture(float _aperture);
+	void setDoorAperture(const std::string &DEF, float _aperture);
 
 signals:
         //void customSignal();
