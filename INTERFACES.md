@@ -307,7 +307,7 @@ Provides access to Webots-specific simulation features.
 interface Webots2Robocomp
     ObjectPose getObjectPose   (string DEF)                         ✅
     void       resetWebots     ()                                   ⚠️
-    void       setDoorAngle    (float angle)                        ✅
+    void       setDoorAngle    (string DEF, float angle)            ✅
     void       setPathToHuman  (int humanId, TPath path)            ✅
 ```
 
@@ -322,7 +322,11 @@ interface Webots2Robocomp
 
 | Parameter | Type | Unit | Range |
 |-----------|------|------|-------|
+| `DEF` | string | — | Webots DEF of the door's **HingeJoint** node (the one carrying `position`) |
 | `angle` | float | radians | [−π, 0] — clamped automatically |
+
+Writes the hinge's `position` field directly: a supervisor teleport, no dynamics. An unknown `DEF`,
+or a node without a `position` field, logs an error and moves nothing.
 
 #### `setPathToHuman` – `TPath` points
 

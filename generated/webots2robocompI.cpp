@@ -33,7 +33,7 @@ Webots2RobocompI::Webots2RobocompI(GenericWorker *_worker, const size_t id): wor
 	};
 
 	setDoorAngleHandlers = {
-		[this](auto &a) {if (worker != nullptr) worker->Webots2Robocomp_setDoorAngle(a); else throw std::runtime_error("Worker is null");}
+		[this](auto &a, auto &b) {if (worker != nullptr) worker->Webots2Robocomp_setDoorAngle(a, b); else throw std::runtime_error("Worker is null");}
 	};
 
 	setObjectPoseHandlers = {
@@ -86,7 +86,7 @@ void Webots2RobocompI::setArmJointsInstant(RoboCompKinovaArm::TJointAngles angle
 	setArmJointsInstantHandlers.at(id)(angles);
 }
 
-void Webots2RobocompI::setDoorAngle(float angle, const Ice::Current&)
+void Webots2RobocompI::setDoorAngle(std::string DEF, float angle, const Ice::Current&)
 {
     if (!worker)
         throw std::runtime_error("Worker is null");
@@ -95,7 +95,7 @@ void Webots2RobocompI::setDoorAngle(float angle, const Ice::Current&)
 		worker->hibernationTick();
 	#endif
     
-	setDoorAngleHandlers.at(id)(angle);
+	setDoorAngleHandlers.at(id)(DEF, angle);
 }
 
 void Webots2RobocompI::setObjectPose(std::string DEF, RoboCompWebots2Robocomp::ObjectPose pose, const Ice::Current&)
