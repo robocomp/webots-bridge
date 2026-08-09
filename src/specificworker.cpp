@@ -389,13 +389,65 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     const double* shadow_velocity = robotNode->getVelocity();
     const float orientation = atan2(shadow_orientation[1], shadow_orientation[0]) - M_PI_2;
 
+    // Webots reports velocities per SIMULATION second; every timestamp we publish is wall-clock.
+    // Convert, so a consumer integrating rate*dt(wall) gets the rotation and translation that really
+    // happened. See update_sim_wall_rate and the note on sim_wall_rate_ in the header for the
+    // measurement that motivated this (6.7% of spurious rotation in room_concept's odometry prior).
+    update_sim_wall_rate(_robot->getTime(), timestamp);
+#if BRIDGE_WALL_TIME_VELOCITIES == 2
+    const double k_wall_lin = sim_wall_rate_, k_wall_rot = sim_wall_rate_;
+#elif BRIDGE_WALL_TIME_VELOCITIES == 1
+    const double k_wall_lin = 1.0,            k_wall_rot = sim_wall_rate_;
+#else
+    const double k_wall_lin = 1.0,            k_wall_rot = 1.0;
+#endif
+
+#if BRIDGE_YAWRATE_DIAG
+    // DIAGNOSTIC (2026-08-09): is the angular velocity we publish consistent with this node's OWN
+    // rotation? Measured downstream, robot_current_angular_speed integrates to 7.2% more rotation
+    // than actually happened: over a pivot that swept four full turns and closed on its starting
+    // heading (so the true rotation is exactly 1440 deg), odometry read 1543.4 deg while the command
+    // read 1444.0. That was measured against room_concept's map-anchored posterior, which cannot be
+    // 7% wrong on ANGLE because a closed rotation pins it. This log removes the localizer from the
+    // question entirely: both columns below are supervisor reads from the same cycle, so
+    //     d(yaw)/d(sim_time)   vs   wz
+    // is a self-contained check of getVelocity()[5]. Logging sim AND wall time also separates a
+    // pacing problem (sim slower than wall) from a wrong value, and TIME_STEP is 33 ms against this
+    // world's default basicTimeStep of 32, which is worth ruling in or out.
+    // Suspicions, in order: aliasing of a ~0.5-1 s oscillation seen in the published rate (3.5-9% of
+    // the mean, long same-sign runs) against the consumer's ~50 ms window; a phase error between the
+    // sampled velocity and the timestamp; the value simply being wrong.
+    {
+        static std::ofstream diag("yawrate_diag.csv");
+        static bool hdr = false;
+        if (not hdr)
+        {
+            diag.imbue(std::locale::classic());   // never emit a comma decimal separator
+            diag << "sim_t,wall_ms,yaw_raw,wz,vx_world,vy_world,sim_wall_rate\n";
+            hdr = true;
+        }
+        diag << _robot->getTime()
+             << ',' << timestamp
+             << ',' << atan2(shadow_orientation[1], shadow_orientation[0])  // UNSHIFTED: unwrap offline
+             << ',' << shadow_velocity[5]
+             << ',' << shadow_velocity[0]
+             << ',' << shadow_velocity[1]
+             << ',' << sim_wall_rate_ << '\n';
+    }
+#endif
+
     Eigen::Matrix2f rt_rotation_matrix;
     rt_rotation_matrix << cos(orientation), -sin(orientation),
                           sin(orientation), cos(orientation);
 
     // Multiply the velocity std::vector by the inverse of the rotation matrix to get the velocity in the robot reference system
     const Eigen::Vector2f shadow_velocity_world(shadow_velocity[1], shadow_velocity[0]);
-    const Eigen::Vector2f shadow_velocity_local = rt_rotation_matrix.inverse() * shadow_velocity_world;
+    // ... and scale to per-WALL-second, because that is the clock our timestamps use. Both linear and
+    // angular: the unit mismatch applies identically to translation, it was simply only measured on
+    // rotation (which room_concept arbitrates against the room geometry, so it was visible there).
+    const Eigen::Vector2f shadow_velocity_local =
+        static_cast<float>(k_wall_lin) * (rt_rotation_matrix.inverse() * shadow_velocity_world);
+    const double shadow_rot_wall = k_wall_rot * shadow_velocity[5];
 
     // Asumimos que el ruido lo pone el cliente
     // Velocidades puras en mm/s y rad/s
@@ -426,20 +478,57 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     pose_data.vz = 0;
     pose_data.vrx = 0;
     pose_data.vry = 0;
-    pose_data.vrz = static_cast<float>(shadow_velocity[5]);
+    pose_data.vrz = static_cast<float>(shadow_rot_wall);
     
     // Velocidades en robot frame
     pose_data.adv = shadow_velocity_local(1);  //y
     pose_data.side = -shadow_velocity_local(0);
-    pose_data.rot = static_cast<float>(shadow_velocity[5]); // CW positive 
+    pose_data.rot = static_cast<float>(shadow_rot_wall); // per WALL second, see sim_wall_rate_
 
     pose_data.timestamp = timestamp;
 
     // Refresh the snapshot served by OmniRobot_getBaseState() while we already hold
     // the freshly read supervisor data, so that RPC never has to query Webots.
-    update_base_state(shadow_position, shadow_velocity_local, shadow_velocity[5]);
+    update_base_state(shadow_position, shadow_velocity_local, shadow_rot_wall);
 
     this->fullposeestimationpub_pubproxy->newFullPose(pose_data);
+}
+
+// Runs in the compute() thread only (from receiving_robotSpeed), so clock_pairs_ needs no lock.
+void SpecificWorker::update_sim_wall_rate(double sim_seconds, long wall_ms)
+{
+    // Trailing 10 s window, plus a light EMA. The 2 s window this started with was far too
+    // responsive: it ranged 0.88-1.00 frame to frame, which swapped a constant 6.5% bias for a
+    // +-6% time-varying one. Measured cost, matched in-place frames: at |omega| 0.8-1.6 rad/s the
+    // localizer's prediction early-exit fell 99.6% -> 93.3% and frames over its gate went 0% -> 6.7%,
+    // while the margin median did not move -- the signature of variance, not bias. What is being
+    // estimated here is how far behind real time the simulation is running, which is a property of
+    // machine load and changes over seconds to minutes, so estimating it over 10 s and smoothing is
+    // both cheaper and more faithful than tracking every frame.
+    clock_pairs_.emplace_back(sim_seconds, wall_ms);
+    while (clock_pairs_.size() > 2 and (wall_ms - clock_pairs_.front().second) > 10000)
+        clock_pairs_.pop_front();
+
+    const double dwall = (wall_ms - clock_pairs_.front().second) / 1000.0;
+    const double dsim  = sim_seconds - clock_pairs_.front().first;
+
+    // Until there is a real span to divide, leave the rate at its last value (1.0 at startup), which
+    // is the historical per-sim-second behaviour. A paused simulation lands here too: dsim is 0, so
+    // the last good rate is held rather than collapsing the published velocities to zero -- they are
+    // zero anyway while paused.
+    if (dwall < 0.5 or dsim <= 0.0)
+        return;
+
+    const double r = dsim / dwall;
+    // Sane band. Outside it something has gone wrong -- a clock jump, a step that blocked for
+    // seconds, a resumed pause -- and a bogus scale is worse than none, so hold the last good value.
+    if (r > 0.05 and r < 2.0)
+    {
+        // EMA on top of the window, so the published scale cannot step frame to frame. alpha 0.05 at
+        // the ~30 Hz step rate is a time constant of about half a second on top of the 10 s window.
+        constexpr double alpha = 0.05;
+        sim_wall_rate_ = (1.0 - alpha) * sim_wall_rate_ + alpha * r;
+    }
 }
 
 void SpecificWorker::update_base_state(const double *position, const Eigen::Vector2f &velocity_local, double rot_velocity)
@@ -876,8 +965,23 @@ void SpecificWorker::apply_pending_speed_command()
         speed_command_pending = false;
     }
 
-    const double advx = cmd.advx * 0.001;   // mm/s -> m/s
-    const double advz = cmd.advz * 0.001;
+    const double advx     = cmd.advx * 0.001;   // mm/s -> m/s
+    const double advz_cmd = cmd.advz * 0.001;
+
+    // Asymmetric-wheelbase compensation. The formula below is the symmetric mecanum form, so it
+    // rotates the robot about the WHEEL CENTROID rather than about the frame origin the caller means.
+    // MEASURED 08-09 by fitting p_k + R(theta_k)*d = c over a clean pivot (139 deg swept, 4.8 cm of
+    // travel, 4.6 mm mean / 8.2 mm max residual): |d| = 2.72 cm, matching the 3.0 cm the proto's wheel
+    // layout predicts, and lying along ONE axis (the other component was 0.14 cm).
+    //
+    // The offset came out along the robot frame's LATERAL axis, so the origin's induced velocity
+    // during a pivot is LONGITUDINAL -- which is why this term is on advz and not advx as first
+    // written. Still disabled: WHEEL_CENTROID_OFFSET is 0.0 because the SIGN depends on conventions
+    // I could not pin by reading (adv/side to robot x/y differs between the two integrators in
+    // room_concept.cpp:3967 and :4013, and cmd.rot's sign against local z is asserted only by a
+    // stale-looking "CW positive" comment above). Getting it backwards doubles the error to 5.4 cm.
+    // See specificworker.h for the one-pivot trial that settles it.
+    const double advz = advz_cmd + WHEEL_CENTROID_OFFSET * cmd.rot;
 
     const double speeds[4] = {1.0 / WHEEL_RADIUS * (advz - advx + (LX + LY) * cmd.rot),
                               1.0 / WHEEL_RADIUS * (advz + advx - (LX + LY) * cmd.rot),

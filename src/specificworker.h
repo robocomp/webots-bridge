@@ -55,15 +55,86 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <deque>
+#include <utility>
 #include <vector>
 
 using namespace Eigen;
 using namespace std;
 #define TIME_STEP 33
 // robot geometry
-#define WHEEL_RADIUS 0.05
-#define LX 0.135  // longitudinal distance from robot's COM to wheel [m].
-#define LY 0.237  // lateral distance from robot's COM to wheel [m].
+// ── Base geometry: these MUST match webots-shadow/protos/Shadow.proto ────────────────────────────
+// The proto puts the four wheel centres at (x = ±0.21, y ∈ {-0.10, +0.16}) in the robot's local
+// frame, where x is lateral and y longitudinal (the bridge maps forward = local y, side = local x —
+// see update_base_state()). So the half-extents are 0.13 longitudinal and 0.21 lateral.
+#define WHEEL_RADIUS 0.05   // matches Interior/ExteriorWheel.proto `radius 0.05`
+#define LX 0.130  // longitudinal half-distance, wheel centre to centre / 2 [m]  (proto: (0.16-(-0.10))/2)
+#define LY 0.210  // lateral half-distance [m]  (proto: |±0.21|)
+//
+// LY WAS 0.237, and that single constant was measurably wrong. Only rotation uses (LX+LY), so it
+// showed up as the base turning FASTER than commanded while translation stayed correct:
+//     bridge (LX+LY) 0.372 / true 0.340 = 1.094 predicted over-rotation
+//     measured over 15 in-place turns against room_concept's SDF posterior: 1.109  (1.3% apart)
+// Measured by integrating the localizer's own cmd_dth / meas_dth columns, not by re-integrating the
+// logged velocity columns — the command is a sparse stepwise signal and sampling it at frame times
+// exaggerates its error badly (it read as 34% that way instead of 11%).
+//
+// Downstream cost while it was wrong: room_concept's command motion prior under-predicted rotation,
+// so the SDF had to drag heading further into every turn, which suppressed the localizer's
+// prediction early-exit during rotation. Anything doing OPEN-LOOP rotation from a commanded omega
+// (a controller's final-orientation move) was simply 9% short.
+//
+// ── Known, NOT yet corrected: the wheelbase is asymmetric ─────────────────────────────────────────
+// Those y offsets are -0.10 and +0.16, so the wheel centroid sits 0.03 m AHEAD of the proto origin,
+// while the inverse kinematics below is the standard symmetric-mecanum form and therefore rotates
+// the robot about that centroid, not about the frame origin the caller means. A commanded pure
+// rotation consequently translates the origin at |v| = 0.03·|omega| — about 4.5 cm/s at 1.5 rad/s,
+// tracing a 3 cm-radius arc instead of pivoting in place.
+//
+// MEASURED 08-09, so this is no longer a prediction. Fitting p_k + R(theta_k)·d = c over a clean
+// pivot in room_concept's etc/pose_trace.csv — 139° swept, only 4.8 cm of travel, 4.6 mm mean and
+// 8.2 mm max residual — gives |d| = 2.72 cm against the 3.0 cm predicted, with 2.72 of it on one
+// axis and 0.14 on the other. A four-turn stretch in the same run agrees in direction. So the
+// asymmetry is real, and its magnitude is 0.027 m rather than the nominal 0.03.
+//
+// The correction is a twist transport, no change to the kinematics needed: rotating about the origin
+// is rotating about the centroid plus one translational term. The measured offset lies along the
+// robot frame's LATERAL axis, so the origin's induced velocity during a pivot is LONGITUDINAL and
+// the term goes on advz (see apply_pending_speed_command) — it was on advx in the first draft of
+// this, which was wrong.
+//
+// What is still NOT established is the SIGN, because it rides on conventions that reading cannot
+// settle: room_concept maps (adv, side) to robot (x, y) one way at room_concept.cpp:3967 and the
+// other way at :4013, and cmd.rot's sign against local z rests on a "CW positive" comment that looks
+// stale. Backwards doubles the error to 5.4 cm, so this ships DISABLED at 0.0.
+//
+// ONE PIVOT SETTLES IT. A pivot means rotation in place: zero commanded translation, net travel
+// under ~15 cm, and the fit residual under 1 cm (an arc gives 30-130 mm and is useless here).
+//   1. set WHEEL_CENTROID_OFFSET to +0.027
+//   2. drive one pivot of >= 180°
+//   3. re-fit d. Toward 0 confirms it; growing to ~5.4 cm means flip the constant's sign — flip the
+//      constant, not the expression, so this comment stays true.
+#define WHEEL_CENTROID_OFFSET 0.0  // [m] 0.0 = off; the measured value is 0.027 (verify the sign)
+
+// A/B TOGGLE for the per-wall-second velocity scaling (see sim_wall_rate_ below).
+//   2 = scale BOTH linear and angular   (as first implemented)
+//   1 = scale ANGULAR only              (rotation is the only channel measured to need it:
+//                                        meas/post was 1.069 on rotation but 0.975 on translation)
+//   0 = off, publish per-simulation-second (historical behaviour)
+// Standing state 2026-08-09: mode 2 fixes rotation (meas/post 1.0685 -> 1.0024) but the localizer's
+// prediction early-exit got WORSE on matched in-place turns (99.4/98.8% -> 94.2/90.7%, over-gate
+// 0.4/0.2% -> 3.6/7.7%) and cmd/post moved 1.004 -> 0.950 for reasons not yet understood. Do not
+// treat mode 2 as settled until an A/B on one protocol -- 3 in-place turns AND ~2 m of straight
+// driving, so BOTH channels are measured -- says which mode wins.
+#ifndef BRIDGE_WALL_TIME_VELOCITIES          // -DBRIDGE_WALL_TIME_VELOCITIES=n overrides
+#define BRIDGE_WALL_TIME_VELOCITIES 2           // A/B'd against mode 1 on matched in-place turns:
+#endif                                          // 95.0/90.8% early exit vs 94.5/90.3%, margins equal
+                                                // to 3 dp. Mode 2 also keeps both velocity channels
+                                                // on ONE clock, which mode 1 does not.
+
+// Set to 1 to emit yawrate_diag.csv (sim_t, wall_ms, yaw_raw, wz, vx_world, vy_world) from
+// receiving_robotSpeed, for the d(yaw)/dt vs getVelocity()[5] check. Off = zero cost.
+#define BRIDGE_YAWRATE_DIAG 1
 #define LINEAR_MAX_SPEED 1.5 // meters per second 
 #define ANGULAR_MAX_SPEED 4.03 //radians per second
 
@@ -204,6 +275,21 @@ private:
 
     void apply_pending_speed_command();
     void update_base_state(const double *position, const Eigen::Vector2f &velocity_local, double rot_velocity);
+
+    // --- Sim-to-wall rate, for publishing velocities in per-WALL-second units ------
+    // Webots velocities are per SIMULATION second, but every timestamp this bridge emits is
+    // wall-clock, so a consumer that integrates rate * dt(wall) over-counts by exactly the amount
+    // the simulation is running behind real time. Measured 2026-08-09: the sim advanced 57.40 s
+    // while the wall advanced 61.31 s (wall/sim = 1.068), and room_concept's odometry prior
+    // accumulated 6.7% more rotation than the robot actually turned. Integrating the SAME published
+    // rate over sim time instead reproduced the node's own yaw to 0.07%, so the value was never
+    // wrong -- the units and the timestamps simply disagreed.
+    // sim_wall_rate_ = d(sim)/d(wall) over a short trailing window; multiplying the published
+    // velocities by it converts them to per-wall-second and makes them consistent with the stamps.
+    // 1.0 until enough samples accrue, and while the sim keeps real time it stays 1.0.
+    std::deque<std::pair<double, long>> clock_pairs_;   // (sim seconds, wall ms)
+    double sim_wall_rate_ = 1.0;
+    void   update_sim_wall_rate(double sim_seconds, long wall_ms);
 
     // --- Deferred Webots work ----------------------------------------------------
     // Servants that need to *write* to the simulation queue a closure here; compute()
