@@ -82,6 +82,15 @@ void SpecificWorker::initialize()
          try { pars.points3D = configLoader.get<bool>("Camera.ZED.points3D"); } catch(...) {}
          try { pars.humans = configLoader.get<bool>("Humans"); } catch(...) {}
 
+        // Which doors this provider advertises over DoorControl: the hinge DEFs of the loaded world.
+        // Absent from the config it advertises none, and getCapabilities() reports canActuate=false —
+        // which is the honest answer for a world whose doors are scenery, and is what stops a caller
+        // offering an open-the-door affordance it could never carry out.
+        try { door_control_defs = configLoader.get<std::vector<std::string>>("DoorControl.Doors"); }
+        catch(...) {}
+        if (not door_control_defs.empty())
+            std::cout << "[DoorControl] advertising " << door_control_defs.size() << " door(s)\n";
+
         // Heavy sensors sample independently of the step rate; absent from the config
         // they follow it, which is the historical behaviour.
         const int compute_period = this->getPeriod("Compute");
@@ -183,6 +192,7 @@ void SpecificWorker::compute()
     // queued. Everything that talks to Webots happens on this thread.
     update_imu_data(now);
     update_object_poses();
+    update_door_control();
     run_webots_tasks();
 
     // Push any speed command received over RPC since the last step.
@@ -1474,6 +1484,167 @@ void SpecificWorker::setDoorAperture(const std::string &DEF, float _aperture) {
     // Set the door position
     positionField->setSFFloat(aperture);
     std::cout << "[Info] Door '" << DEF << "' aperture set to " << aperture << " rad.\n";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// DoorControl — the simulator as one provider among several
+//
+// Nothing below reports whether a door IS open: it reports what this provider did about a
+// REQUEST. The caller confirms the door moved by looking at it. That is not a limitation of the
+// simulator — it is the contract that lets the same caller talk to a relay in a real apartment,
+// or to a component that asks a person, without changing a line.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+// Runs in the compute() (Webots) thread. Refreshes the advertised door list: for each hinge DEF
+// named in config, where is it. The caller associates these poses with its own fitted apertures,
+// so the ids here stay opaque — they happen to be Webots DEFs, and nothing outside may assume it.
+void SpecificWorker::update_door_control()
+{
+    if (door_control_defs.empty() or robot == nullptr) return;
+
+    RoboCompDoorControl::DoorRefList doors;
+    doors.reserve(door_control_defs.size());
+    for (const auto &def : door_control_defs)
+    {
+        auto it = doorNodes.find(def);
+        if (it == doorNodes.end())
+            it = doorNodes.emplace(def, robot->getFromDef(def)).first;
+        if (it->second == nullptr) continue;    // named in config but not in this world
+
+        // A hinge's jointParameters carries `anchor`, not `translation`: the pose that matters to a
+        // caller is the door's PLACE, so walk up to the parent Solid, which is the node that has one.
+        webots::Node *placed = it->second;
+        webots::Field *t = placed->getField("translation");
+        for (int hop = 0; t == nullptr and hop < 3; ++hop)
+        {
+            placed = placed->getParentNode();
+            if (placed == nullptr) break;
+            t = placed->getField("translation");
+        }
+        if (t == nullptr) continue;
+
+        const double *p = t->getSFVec3f();
+        RoboCompDoorControl::DoorRef ref;
+        ref.id = def;
+        ref.pose.x = static_cast<float>(p[0] * 1000.0);      // mm, to match getObjectPose
+        ref.pose.y = static_cast<float>(p[1] * 1000.0);
+        ref.pose.angle = 0.f;
+        if (webots::Field *r = placed->getField("rotation"); r != nullptr)
+        {
+            const double *rot = r->getSFRotation();
+            ref.pose.angle = static_cast<float>(rot[2] >= 0 ? rot[3] : -rot[3]);   // z-axis only
+        }
+        ref.width = 1000.f;
+        doors.push_back(ref);
+    }
+
+    const std::lock_guard<std::mutex> lock(door_control_mutex);
+    door_control_doors = std::move(doors);
+}
+
+RoboCompDoorControl::Capabilities SpecificWorker::DoorControl_getCapabilities()
+{
+    last_read.store(std::chrono::high_resolution_clock::now());
+
+    RoboCompDoorControl::Capabilities caps;
+    const std::lock_guard<std::mutex> lock(door_control_mutex);
+    caps.doors = door_control_doors;
+    caps.canActuate = not caps.doors.empty();
+    caps.continuousAngle = true;          // a supervisor teleport can hold any angle
+    caps.requiresHuman = false;           // nobody is being asked a favour here
+    caps.typicalLatencySec = 0.1f;        // one compute() period: the task runs before the next step
+    return caps;
+}
+
+RoboCompDoorControl::RequestAck SpecificWorker::DoorControl_requestDoor(RoboCompDoorControl::DoorRequest req)
+{
+    last_read.store(std::chrono::high_resolution_clock::now());
+
+    RoboCompDoorControl::RequestAck ack;
+    ack.requestId = 0;
+    ack.accepted = false;
+    ack.refusal = RoboCompDoorControl::RefusalReason::UnknownDoor;
+    ack.expectedLatencySec = 0.1f;
+
+    // Resolve the door. The caller normally quotes an id we advertised; if it quotes none (or one we
+    // do not know) fall back to matching by PLACE, which is the resolution rule that survives when
+    // the provider is swapped for one that never heard of Webots DEFs.
+    std::string def;
+    {
+        const std::lock_guard<std::mutex> lock(door_control_mutex);
+        for (const auto &d : door_control_doors)
+            if (d.id == req.doorId) { def = d.id; break; }
+
+        if (def.empty())
+        {
+            float best = 400.f;   // mm; beyond this it is a different door, not a noisy estimate
+            for (const auto &d : door_control_doors)
+            {
+                const float dx = d.pose.x - req.door.pose.x, dy = d.pose.y - req.door.pose.y;
+                if (const float dist = std::sqrt(dx * dx + dy * dy); dist < best)
+                    { best = dist; def = d.id; }
+            }
+        }
+    }
+    if (def.empty())
+    {
+        std::cerr << "[DoorControl] no door matches id '" << req.doorId << "' or place ("
+                  << req.door.pose.x << ", " << req.door.pose.y << ") — refusing.\n";
+        return ack;   // UnknownDoor: telling the caller to stop asking is more useful than silence
+    }
+
+    // setDoorAperture clamps to [-pi, 0]; 0 is flush. "Open" without a usable hint means 90 degrees.
+    float target = 0.f;
+    if (req.action == RoboCompDoorControl::DoorAction::OpenDoor)
+        target = (req.apertureHint < -1e-3f) ? req.apertureHint
+                                             : -static_cast<float>(M_PI) / 2.f;
+
+    int id = 0;
+    {
+        const std::lock_guard<std::mutex> lock(door_control_mutex);
+        id = door_control_next_id++;
+        door_control_requests[id] = RoboCompDoorControl::RequestStatus{
+            id, RoboCompDoorControl::RequestState::Queued, RoboCompDoorControl::RefusalReason::NoRefusal};
+    }
+
+    post_webots_task([this, id, def, target]
+    {
+        setDoorAperture(def, target);
+        const std::lock_guard<std::mutex> lock(door_control_mutex);
+        if (auto it = door_control_requests.find(id); it != door_control_requests.end()
+            and it->second.state != RoboCompDoorControl::RequestState::Aborted)
+            it->second.state = RoboCompDoorControl::RequestState::Delivered;
+    });
+
+    ack.requestId = id;
+    ack.accepted = true;
+    ack.refusal = RoboCompDoorControl::RefusalReason::NoRefusal;
+    return ack;
+}
+
+RoboCompDoorControl::RequestStatus SpecificWorker::DoorControl_getRequestStatus(int requestId)
+{
+    last_read.store(std::chrono::high_resolution_clock::now());
+
+    const std::lock_guard<std::mutex> lock(door_control_mutex);
+    if (auto it = door_control_requests.find(requestId); it != door_control_requests.end())
+        return it->second;
+
+    // An id we never issued. Aborted rather than a throw: a caller polling across a provider
+    // restart should be told to give up on this request, not handed an exception to special-case.
+    return RoboCompDoorControl::RequestStatus{requestId, RoboCompDoorControl::RequestState::Aborted,
+                                             RoboCompDoorControl::RefusalReason::NoRefusal};
+}
+
+void SpecificWorker::DoorControl_cancelRequest(int requestId)
+{
+    last_read.store(std::chrono::high_resolution_clock::now());
+
+    const std::lock_guard<std::mutex> lock(door_control_mutex);
+    if (auto it = door_control_requests.find(requestId); it != door_control_requests.end()
+        and it->second.state == RoboCompDoorControl::RequestState::Queued)
+        it->second.state = RoboCompDoorControl::RequestState::Aborted;
+    // Already delivered: the teleport happened, and pretending otherwise would be a lie.
 }
 
 

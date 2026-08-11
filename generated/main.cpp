@@ -79,6 +79,7 @@
 
 #include <camera360rgbI.h>
 #include <camerargbdsimpleI.h>
+#include <doorcontrolI.h>
 #include <imuI.h>
 #include <laserI.h>
 #include <lidar3dI.h>
@@ -89,6 +90,7 @@
 
 #include <Camera360RGB.h>
 #include <CameraRGBDSimple.h>
+#include <DoorControl.h>
 #include <FullPoseEstimation.h>
 #include <FullPoseEstimationPub.h>
 #include <GenericBase.h>
@@ -357,6 +359,9 @@ int Webots2Robocomp::run(int argc, char* argv[])
 		implement<VisualElementsI>(communicator(),
 		                    configLoader.get<std::string>("Endpoints.VisualElements"), 
 		                    "visualelements", worker,  0);
+		implement<DoorControlI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.DoorControl"), 
+		                    "doorcontrol", worker,  0);
 		implement<Webots2RobocompI>(communicator(),
 		                    configLoader.get<std::string>("Endpoints.Webots2Robocomp"), 
 		                    "webots2robocomp", worker,  0);

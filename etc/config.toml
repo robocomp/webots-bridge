@@ -14,12 +14,22 @@ JoystickAdapterPrefix = ""
 # Endpoints for implements interfaces
 Camera360RGB = "tcp -p 10098"
 CameraRGBDSimple = "tcp -p 10096"
+DoorControl = "tcp -p 10008"
 IMU = "tcp -p 10007"
 Laser = "tcp -p 10003"
 Lidar3D = "tcp -p 11988"
 OmniRobot = "tcp -p 10004"
 VisualElements = "tcp -p 10005"
 Webots2Robocomp = "tcp -p 10006"
+
+
+# The doors this bridge advertises over DoorControl, by the DEF of each hinge (the node with a
+# `position` field). They are the ids callers see; a caller binds them to its own door identities by
+# PLACE, so renaming a DEF here is safe and nothing outside may assume these are Webots names.
+# Leave the list out entirely for a world whose doors are scenery: getCapabilities() then reports
+# canActuate = false, which is what stops a caller offering an affordance it could never carry out.
+[DoorControl]
+Doors = ["DOOR_0", "DOOR_1"]
 
 
 

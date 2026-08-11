@@ -200,6 +200,15 @@ public:
 	void Webots2Robocomp_setObjectPose(std::string DEF, RoboCompWebots2Robocomp::ObjectPose pose){};
 	void JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data);
 
+	// --- DoorControl: this simulator's implementation of a provider-agnostic door actuator -------
+	// The same requests a home-automation bridge or a speech component would serve, so a caller
+	// never has to know it is talking to Webots. Underneath it is still the supervisor teleport,
+	// but that is this provider's business, not the interface's.
+	RoboCompDoorControl::Capabilities DoorControl_getCapabilities();
+	RoboCompDoorControl::RequestAck DoorControl_requestDoor(RoboCompDoorControl::DoorRequest req);
+	RoboCompDoorControl::RequestStatus DoorControl_getRequestStatus(int requestId);
+	void DoorControl_cancelRequest(int requestId);
+
 public slots:
 
 	/**
@@ -330,6 +339,20 @@ private:
     std::map<std::string, TrackedObject> object_poses;
     std::map<std::string, TrackedObjectHandles> object_handles;
     void update_object_poses();
+
+    // --- DoorControl state -------------------------------------------------------
+    // The doors this provider advertises are the hinge DEFs named in config
+    // (DoorControl.Doors). Their poses are refreshed from the Webots thread like every
+    // other snapshot here; the servants only ever read the cache under the mutex.
+    // The caller matches these poses against its own fitted apertures — this provider
+    // has no idea what a "room" is, which is exactly what makes it swappable for a
+    // home-automation bridge or a text-to-speech component.
+    std::mutex door_control_mutex;
+    RoboCompDoorControl::DoorRefList door_control_doors;   // advertised, pose in mm
+    std::map<int, RoboCompDoorControl::RequestStatus> door_control_requests;
+    int door_control_next_id = 1;
+    std::vector<std::string> door_control_defs;            // from config, compute()-thread only
+    void update_door_control();
 
     void receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData>& lidar_doubleBuffer, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, long timestamp);
     void receiving_cameraRGBData(webots::Camera* _camera, long timestamp);
