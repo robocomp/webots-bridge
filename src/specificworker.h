@@ -48,9 +48,14 @@
 #include <doublebuffer/DoubleBuffer.h>
 #include <fps/fps.h>
 #include "fixedsizedeque.h"
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <fstream>
 #include <mutex>
+#include <tuple>
 #include <condition_variable>
 #include <functional>
 #include <map>
@@ -61,7 +66,6 @@
 
 using namespace Eigen;
 using namespace std;
-#define TIME_STEP 33
 // robot geometry
 // ── Base geometry: these MUST match webots-shadow/protos/Shadow.proto ────────────────────────────
 // The proto puts the four wheel centres at (x = ±0.21, y ∈ {-0.10, +0.16}) in the robot's local
@@ -126,12 +130,32 @@ using namespace std;
 #ifndef BRIDGE_WALL_TIME_VELOCITIES          // -DBRIDGE_WALL_TIME_VELOCITIES=n overrides
 #define BRIDGE_WALL_TIME_VELOCITIES 1
 #endif
-                                                // to 3 dp. Mode 2 also keeps both velocity channels
-                                                // on ONE clock, which mode 1 does not.
 
 // Set to 1 to emit yawrate_diag.csv (sim_t, wall_ms, yaw_raw, wz, vx_world, vy_world) from
 // receiving_robotSpeed, for the d(yaw)/dt vs getVelocity()[5] check. Off = zero cost.
 #define BRIDGE_YAWRATE_DIAG 0
+
+// Set to 1 to emit wheel_odom_diag.csv from receiving_robotSpeed: the encoder-derived twist and the
+// supervisor's, both in the SAME cycle and both per-SIM-second, so the difference between them IS the
+// mecanum slip. Everything needed to settle the FK's signs, bound the slip, and check the at-rest
+// floor against the isMoving threshold is in that one file. Off = zero cost.
+#ifndef BRIDGE_WHEEL_ODOM_DIAG               // -DBRIDGE_WHEEL_ODOM_DIAG=1 turns it on
+#define BRIDGE_WHEEL_ODOM_DIAG 0
+#endif
+
+// EMA on the encoder-derived linear channels. 1.0 = off, which is how this ships.
+//
+// There is no measurement justifying a filter yet, and two reasons to expect none is needed. The
+// PositionSensors declare no `resolution` in Shadow.proto, so getValue() is the joint angle to double
+// precision and differencing two O(1e2) doubles costs ~1e-11 rad/s of numerical noise. And the
+// PUBLISHED value is differenced over the whole 100 ms publish interval (see WheelOdometry below),
+// not over one 8 ms step, which already averages away the velocity-PID transient that fighting roller
+// contact produces. Turn this on only if the at-rest run in the diagnostic shows a floor above the
+// 0.001 isMoving threshold, and write the measured number here when you do -- the same discipline
+// WHEEL_CENTROID_OFFSET follows above.
+#ifndef BRIDGE_WHEEL_ODOM_EMA_ALPHA
+#define BRIDGE_WHEEL_ODOM_EMA_ALPHA 1.0
+#endif
 #define LINEAR_MAX_SPEED 1.5 // meters per second 
 #define ANGULAR_MAX_SPEED 4.03 //radians per second
 
@@ -299,6 +323,140 @@ private:
     std::deque<std::pair<double, long>> clock_pairs_;   // (sim seconds, wall ms)
     double sim_wall_rate_ = 1.0;
     void   update_sim_wall_rate(double sim_seconds, long wall_ms);
+
+    // --- Wheel odometry: the velocity this bridge PUBLISHES on FullPoseEstimationPub -------------
+    // Until now that channel carried robotNode->getVelocity() -- the supervisor's ground truth. It has
+    // no wheel slip, and nothing in the sim exercised the path the real robot actually uses: the base
+    // controller reads its four wheel speeds and inverts the mecanum kinematics
+    // (SVD48VBase/src/specificworker.py:227, `inv_m_wheels @ driver.get_speed()`). Downstream that
+    // absence is a documented blocker -- room_concept's se2_preintegration.h:85 cannot identify an
+    // odometry scale in simulation because "there is no encoder in the sim loop at all".
+    //
+    // The four PositionSensors were already resolved and enabled in initialize(); getValue() had
+    // simply never been called. So this is the FORWARD kinematics, the exact algebraic inverse of the
+    // IK in apply_pending_speed_command() and built from the same WHEEL_RADIUS/LX/LY so the two cannot
+    // drift apart:
+    //     advz = R/4       * ( w0 + w1 + w2 + w3)
+    //     advx = R/4       * (-w0 + w1 + w2 - w3)
+    //     rot  = R/(4*c)   * ( w0 - w1 + w2 - w3)      c = LX + LY
+    // The IK matrix is column-orthogonal (norms 4, 4, 4c^2), so that least-squares inverse is exact.
+    //
+    // The GYRO IS DELIBERATELY NOT FUSED IN HERE. FullPoseEstimationPub is the *wheel* channel, the
+    // sim's stand-in for SVD48VBase; the IMU is a separate Ice interface the consumer reads and
+    // integrates itself. Pre-fusing them in the bridge would leave that consumer no way to weigh the
+    // two sources against each other, which is the entire job of the filter component this arrangement
+    // stands in for. Consequence worth knowing: `rot` therefore rides on (LX+LY) again, so the LY
+    // calibration in commit 5968a65 matters for this channel in a way it would not if the gyro
+    // supplied the yaw rate.
+    //
+    // TWO ANCHORS, and the distinction matters. `pub_*` is differenced over the whole publish interval
+    // (100 ms), so the published velocity is the exact MEAN over the interval a consumer will integrate
+    // it across -- integrating it reproduces the true wheel displacement. Sampling an 8 ms snapshot
+    // every 100 ms instead would alias the roller-contact transient and would NOT integrate correctly.
+    // `step_*` is per-step and exists only to feed the diagnostic.
+    enum class VelocitySource { Wheels, Supervisor };
+    VelocitySource fullpose_velocity_source_ = VelocitySource::Wheels;
+
+    // --- Which running gear this world's robot actually has -------------------------------------
+    // Shadow.proto is a four-wheel mecanum; ShadowDiff.proto is the real robot's layout -- two drive
+    // wheels on the lateral axis plus front and back casters. Both exist, so the kinematics is chosen
+    // at runtime rather than compiled in, and a world swap needs only a config line.
+    //
+    // The differential constants are the real robot's own, from
+    // SVD48VBase/etc/config_diferential: wheelRadius = 100 mm, axesLength = 518 mm. That component
+    // uses axesLength as the TRACK (its 2x2 m_wheels is [[-1, L/2], [-1, -L/2]]), so the half-track
+    // is 0.259. Using its numbers rather than fitted ones is the whole point: a constant measured
+    // against the simulator is a constant that only describes the simulator.
+    //
+    //   mecanum       advz = R/4     * ( w0 + w1 + w2 + w3)
+    //                 advx = R/4     * (-w0 + w1 + w2 - w3)
+    //                 rot  = R/(4c)  * ( w0 - w1 + w2 - w3)      c = LX + LY
+    //   differential  advz = R/2     * ( wl + wr)
+    //                 advx = 0                                   it physically cannot strafe
+    //                 rot  = R/(2c)  * ( wr - wl)                c = half-track
+    //
+    // Both keep the axis -1 0 0 convention, so a positive motor velocity still means forward and the
+    // sign handling downstream is identical.
+    //
+    // MEASURED 2026-08-15, differential base in piso.wbt, 810 publish intervals against the
+    // supervisor (which OmniRobot still serves, which is why the comparison is possible at all):
+    //     adv   1.000  (n=574)   translation is exact; also confirms R = 0.100
+    //     rot   1.082  (n=114 pivots)   the wheels over-report rotation by 8.2%
+    //     side  0                a differential base cannot strafe, and the model says so
+    // The 8.2% is SCRUB, and it is left in on purpose. A differential base turns by dragging its
+    // wheels sideways, so some commanded rotation is always lost; real wheel odometry over-reports
+    // rotation for exactly this reason. That error is the thing a wheels+IMU filter exists to
+    // correct -- the gyro reads true yaw (measured gyro/sup = 1.065, i.e. 1/k_wall) while the wheels
+    // drift. Calibrating half_track_ to the effective 0.280 would make sim odometry unrealistically
+    // perfect and remove the very signal the fusion is meant to consume. Do not "fix" it.
+    //
+    // CONSEQUENCE FOR CONTROL, which is not odometry's problem but is real: the IK uses the same
+    // constant, so a commanded rotation under-delivers by about the same 8%. Anything steering
+    // open-loop on a commanded omega will fall short; close the loop.
+    //
+    // For contrast, the same measurement on the MECANUM base in this world read rot 0.845 -- the body
+    // turning FASTER than the wheels implied, which is not a thing wheels can do. That was piso.wbt
+    // missing the ContactProperties that make mecanum rollers slide (see the note in the world file);
+    // without them the rollers grip and the base is a skid-steer wearing mecanum wheels.
+    enum class BaseKinematics { Mecanum, Differential };
+    BaseKinematics base_kinematics_ = BaseKinematics::Mecanum;
+    int    wheel_count_  = 4;
+    double wheel_radius_ = WHEEL_RADIUS;
+    double half_track_   = LX + LY;      // the c above
+    bool   warned_advx_ignored_ = false; // a differential base cannot strafe; say so once, not per call
+
+    struct WheelOdometry
+    {
+        double step_angle[4]{};             // rad, per-step anchor      (diagnostic only)
+        double step_sim_t = 0.0;
+        double pub_angle[4]{};              // rad, per-publish anchor   (what gets published)
+        double pub_sim_t  = 0.0;
+        bool   seeded     = false;          // both anchors hold a real sample
+        Eigen::Vector2f v_local{0.f, 0.f};  // per SIM second. (0) = -side, (1) = forward -- the
+                                            // shadow_velocity_local convention, see receiving_robotSpeed
+        double rot        = 0.0;            // rad/sim-s about local +z, encoders only
+        double step_w[4]{};                 // per-wheel rates over one step   (diagnostic only)
+        Eigen::Vector2f step_v_local{0.f, 0.f};
+        double step_rot   = 0.0;
+        double pub_dt     = 0.0;            // s, the interval v_local/rot were differenced over
+        bool   valid      = false;          // v_local/rot hold a usable measurement
+    };
+    WheelOdometry wheel_odo_;               // compute()-thread only; no lock, like clock_pairs_
+    bool update_wheel_odometry(double sim_seconds, bool publishing);
+
+    // Publish period for the wheel channel. The IMU stays at the step rate; that rate GAP is what a
+    // consumer's high-rate injection propagates across. 100 ms matches the real base
+    // (SVD48VBase/etc/config_omnidirectional: Period.Compute = 100).
+    int    fullpose_publish_period_ms = 100;
+    double next_fullpose_publish_ms   = 0.0;
+
+    // Nominal per-sample variances, SI units squared, from config. The simulated gyro and encoders are
+    // EXACT and the accelerometer only quantises at 0.001, so a measured sim covariance would be ~0 --
+    // and a zero variance reads downstream as infinite confidence, which wrecks any filter. So publish
+    // plausible real-robot figures and let the real IMU and base controller overwrite them once
+    // calibrated. (room_config.h already records sigma_v = 3.9e-7 m/sqrt(s) over 24434 parked frames,
+    // five orders below what the consumer's motion prior is configured with.)
+    double nominal_gyro_var_ = 1e-5;        // (rad/s)^2
+    double nominal_acc_var_  = 1e-3;        // (m/s^2)^2
+    double nominal_vel_var_  = 1e-4;        // (m/s)^2
+    double nominal_rot_var_  = 1e-4;        // (rad/s)^2
+
+    // Acquisition instant of a device's current sample, on the sim clock. Webots refreshes a device on
+    // steps that are multiples of its sampling period, so the sample in hand was taken at the last such
+    // multiple -- NOT at the loop time, which is what every payload used to be stamped with even though
+    // a lidar frame can be a full sensor period old. Returns ms.
+    static double acquisition_sim_ms(double sim_now_ms, int device_period_ms);
+    // ... and its wall-clock equivalent, for the existing `timestamp` field.
+    long acquisition_wall_ms(long loop_wall_ms, double sim_now_ms, int device_period_ms) const;
+
+#if BRIDGE_WHEEL_ODOM_DIAG
+    // What the wheels were last actually told, for the diagnostic's cmd_* columns.
+    struct AppliedCommand { double advx = 0.0, advz = 0.0, rot = 0.0; };
+    AppliedCommand last_applied_cmd_;       // compute()-thread only
+    void log_wheel_odom_diag(double sim_now_ms, long wall_ms, bool publishing,
+                             const Eigen::Vector2f &sup_v_local_sim, double sup_wz,
+                             const double *orientation_matrix);
+#endif
 
     // --- Deferred Webots work ----------------------------------------------------
     // Servants that need to *write* to the simulation queue a closure here; compute()

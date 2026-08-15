@@ -91,6 +91,37 @@ void SpecificWorker::initialize()
         if (not door_control_defs.empty())
             std::cout << "[DoorControl] advertising " << door_control_defs.size() << " door(s)\n";
 
+        // Where the published base velocity comes from, and how often it goes out. Note the string
+        // MUST be quoted in etc/config: ConfigLoader::processLine throws "type not recognized" for a
+        // bare word and the throw escapes load() before any get() runs, so an unquoted value aborts
+        // startup rather than falling back to the default here.
+        std::string velocity_source = "wheels";
+        try { velocity_source = configLoader.get<std::string>("FullPose.VelocitySource"); } catch(...) {}
+        fullpose_velocity_source_ = velocity_source == "supervisor" ? VelocitySource::Supervisor
+                                                                    : VelocitySource::Wheels;
+        try { fullpose_publish_period_ms = configLoader.get<int>("FullPose.PublishPeriod"); } catch(...) {}
+        if (fullpose_publish_period_ms < 1) fullpose_publish_period_ms = 1;
+
+        // Which running gear the loaded world's robot has. Defaults to mecanum, which is what
+        // Shadow.proto is and what every world other than piso.wbt still instantiates.
+        std::string kinematics = "mecanum";
+        try { kinematics = configLoader.get<std::string>("Base.Kinematics"); } catch(...) {}
+        if (kinematics == "differential")
+        {
+            base_kinematics_ = BaseKinematics::Differential;
+            wheel_count_  = 2;
+            wheel_radius_ = 0.100;   // SVD48VBase/etc/config_diferential: wheelRadius = 100 mm
+            half_track_   = 0.259;   //                                    axesLength  = 518 mm, /2
+        }
+        // ...overridable, because a future world may differ from the one robot these came from.
+        try { wheel_radius_ = configLoader.get<double>("Base.WheelRadius"); } catch(...) {}
+        try { half_track_   = configLoader.get<double>("Base.HalfTrack"); } catch(...) {}
+
+        try { nominal_gyro_var_ = configLoader.get<double>("IMU.NominalGyroVar"); } catch(...) {}
+        try { nominal_acc_var_  = configLoader.get<double>("IMU.NominalAccVar"); } catch(...) {}
+        try { nominal_vel_var_  = configLoader.get<double>("FullPose.NominalVelVar"); } catch(...) {}
+        try { nominal_rot_var_  = configLoader.get<double>("FullPose.NominalRotVar"); } catch(...) {}
+
         // Heavy sensors sample independently of the step rate; absent from the config
         // they follow it, which is the historical behaviour.
         const int compute_period = this->getPeriod("Compute");
@@ -118,7 +149,13 @@ void SpecificWorker::initialize()
         }
 
         // Inicializa los motores y los sensores de posición.
-        const char *motorNames[4] = {"wheel2", "wheel1", "wheel4", "wheel3"};
+        // Mecanum order is {wheel2, wheel1, wheel4, wheel3} -- it is what the IK below is written
+        // against, not alphabetical, so do not "tidy" it. Differential is {left, right}, matching
+        // ShadowDiff.proto and the sign convention in the forward kinematics.
+        const char *mecanumMotorNames[4] = {"wheel2", "wheel1", "wheel4", "wheel3"};
+        const char *diffMotorNames[2]    = {"wheel_left", "wheel_right"};
+        const char **motorNames = base_kinematics_ == BaseKinematics::Differential
+                                      ? diffMotorNames : mecanumMotorNames;
         //const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
 
         // Inicializa los sensores soportados.
@@ -144,11 +181,18 @@ void SpecificWorker::initialize()
             camera360_1->enable(sensor_period);
             camera360_2->enable(sensor_period);
         }
-        for (int i = 0; i < 4; i++)
+        for (int i = 0; i < 4; i++) { motors[i] = nullptr; ps[i] = nullptr; }
+        for (int i = 0; i < wheel_count_; i++)
         {
             motors[i] = robot->getMotor(motorNames[i]);
+            if (motors[i] == nullptr)
+            {
+                std::cout << "No motor named '" << motorNames[i] << "' in this world -- is "
+                          << "Base.Kinematics right for the robot it loads?" << std::endl;
+                continue;
+            }
             ps[i] = motors[i]->getPositionSensor();
-            ps[i]->enable(compute_period);
+            if (ps[i]) ps[i]->enable(compute_period);
             motors[i]->setPosition(INFINITY); // Modo de velocidad.
             motors[i]->setVelocity(0);
         }
@@ -156,6 +200,24 @@ void SpecificWorker::initialize()
         if(gyroscope) gyroscope->enable(compute_period);
         if (zedRangeFinder) zedRangeFinder->enable(sensor_period);
         if (zed) zed->enable(sensor_period);
+
+        // Wheel odometry needs every encoder. Fall back LOUDLY rather than silently, because a quiet
+        // revert to the supervisor is indistinguishable from the wheel path not working.
+        if (fullpose_velocity_source_ == VelocitySource::Wheels)
+            for (int i = 0; i < wheel_count_; i++)
+                if (ps[i] == nullptr)
+                {
+                    std::cout << "No position sensor on motor " << motorNames[i]
+                              << "; falling back to FullPose.VelocitySource = supervisor." << std::endl;
+                    fullpose_velocity_source_ = VelocitySource::Supervisor;
+                    velocity_source = "supervisor";
+                    break;
+                }
+        std::cout << "Base: " << kinematics << " (" << wheel_count_ << " driven wheels, R="
+                  << wheel_radius_ << " m, half-track=" << half_track_ << " m)" << std::endl;
+        std::cout << "FullPose: " << velocity_source << "-derived velocity @ "
+                  << (1000.0 / fullpose_publish_period_ms) << " Hz; IMU @ step rate ("
+                  << (1000.0 / compute_period) << " Hz nominal)" << std::endl;
 
         // Doors are resolved lazily, by DEF, on the first setDoorAngle that names them (see
         // setDoorAperture) — there is no single "the" controllable door any more.
@@ -250,8 +312,16 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     RoboCompCameraRGBDSimple::TRGBD new_zed_image;
 
     // ------------------ Common -----------------------------
-    new_zed_image.image.alivetime = new_zed_image.depth.alivetime = new_zed_image.points.alivetime = timestamp;
-    new_zed_image.image.period = new_zed_image.depth.period = new_zed_image.points.period = fps.get_period();
+    // Acquisition instant, not loop time: the frame was rendered at the last multiple of the camera's
+    // sampling period, so it can be up to a full sensor_period old. And `period` is the DEVICE's
+    // sampling period -- it used to report fps.get_period(), which is the loop period and left a
+    // consumer no way to infer the frame's age. (CameraRGBDSimple carries no simTimestamp field; only
+    // Lidar3D, IMU and FullPoseEstimation gained one.)
+    const double zed_sim_now_ms = robot != nullptr ? robot->getTime() * 1000.0 : 0.0;
+    const long zed_acq_ms = acquisition_wall_ms(timestamp, zed_sim_now_ms, sensor_period);
+    new_zed_image.image.alivetime = new_zed_image.depth.alivetime = new_zed_image.points.alivetime = zed_acq_ms;
+    new_zed_image.image.period = new_zed_image.depth.period = new_zed_image.points.period =
+        static_cast<float>(sensor_period);
 
     int width = _camera->getWidth();
     int height = _camera->getHeight();
@@ -304,8 +374,8 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
     if(pars.points3D)
     {
         RoboCompCameraRGBDSimple::TPoints& points = new_zed_image.points;
-        points.alivetime = timestamp;
-        points.period = fps.get_period();
+        points.alivetime = zed_acq_ms;                          // acquisition, not loop time
+        points.period = static_cast<float>(sensor_period);      // device period, not loop period
         points.compressed = false;
         int offset = 2;
         points.points.reserve((width / offset) * (height / offset));
@@ -337,22 +407,19 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
         return;
     }
 
-    // Timestamp calculation
-//    auto now = std::chrono::system_clock::now();
-//    auto duration = now.time_since_epoch();
-//    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-    newImage360.timestamp = timestamp;
+    // Acquisition instant, not loop time: both cameras were rendered at the last multiple of their
+    // sampling period, so the frame can be up to a full sensor_period old.
+    const double cam360_sim_now_ms = robot != nullptr ? robot->getTime() * 1000.0 : 0.0;
+    newImage360.timestamp = acquisition_wall_ms(timestamp, cam360_sim_now_ms, sensor_period);
 
     // La resolución de la nueva imagen será el doble en el ancho ya que estamos combinando las dos imágenes.
     newImage360.width = 2 * _camera1->getWidth();
     newImage360.height = _camera1->getHeight();
     newImage360.depth = 3; // assuming color images
 
-    // Establecer el periodo de refresco de la imagen en milisegundos.
-//    newImage360.period = getPeriod("Compute");
-
-    // Establecer el periodo real del compute de refresco de la imagen en milisegundos.
-    newImage360.period = fps.get_period();
+    // The DEVICE's sampling period, which is what tells a consumer how old this frame may be. It used
+    // to report fps.get_period() -- the loop period, unrelated to when the cameras were rendered.
+    newImage360.period = static_cast<float>(sensor_period);
 
     const unsigned char* webotsImageData1 = _camera1->getImage();
     const unsigned char* webotsImageData2 = _camera2->getImage();
@@ -391,6 +458,194 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
 
     //std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - now).count() << std::endl;
 }
+
+// Webots refreshes a device's data on steps that are multiples of its sampling period, so the sample
+// currently in hand was taken at the last such multiple -- which is up to a full sensor period before
+// the loop time every payload used to be stamped with. Anything that anchors on "when was this scan
+// taken" (a localizer propagating odometry forward from an optimized pose, say) needs the real instant:
+// at 1.5 rad/s a 32 ms error is 2.7 degrees of heading.
+double SpecificWorker::acquisition_sim_ms(double sim_now_ms, int device_period_ms)
+{
+    if (device_period_ms <= 0) return sim_now_ms;
+    return std::floor(sim_now_ms / device_period_ms) * device_period_ms;
+}
+
+// The same instant on the wall clock. The sample is (sim_now - t_acq) of SIMULATION time old, and the
+// simulation runs slower than the wall by sim_wall_rate_, so it is that much /sim_wall_rate_ of WALL
+// time old. Reuses the estimator commit 5968a65 already put in place.
+long SpecificWorker::acquisition_wall_ms(long loop_wall_ms, double sim_now_ms, int device_period_ms) const
+{
+    const double age_sim_ms = sim_now_ms - acquisition_sim_ms(sim_now_ms, device_period_ms);
+    const double rate = sim_wall_rate_ > 0.05 ? sim_wall_rate_ : 1.0;
+    return loop_wall_ms - static_cast<long>(age_sim_ms / rate);
+}
+
+// Runs in the compute() thread only, from receiving_robotSpeed, so this needs no lock -- same as
+// clock_pairs_. Differences the four wheel encoders over SIMULATION time and inverts the mecanum IK of
+// apply_pending_speed_command(). Returns false when there is no usable sample, in which case the
+// previous velocity is held -- which is what a real odometry driver does on a dropped frame.
+//
+// `publishing` says whether this cycle will emit a FullPose. The published twist is differenced from
+// the PUBLISH anchor, not the step anchor, so it is the exact mean over the interval the consumer will
+// integrate it across (see WheelOdometry in the header for why that matters).
+bool SpecificWorker::update_wheel_odometry(double sim_seconds, bool publishing)
+{
+    double angle[4] = {0, 0, 0, 0};
+    for (int i = 0; i < wheel_count_; ++i)
+    {
+        if (ps[i] == nullptr) { wheel_odo_.valid = false; return false; }
+        angle[i] = ps[i]->getValue();
+        // NaN until the first robot->step(). compute() calls us BEFORE the step, so cycle 1 always
+        // lands here: publish zeros for one cycle rather than a garbage difference.
+        if (not std::isfinite(angle[i])) { wheel_odo_.seeded = false; wheel_odo_.valid = false; return false; }
+    }
+
+    // Closed-form inverse of the IK in apply_pending_speed_command(). See the header for the
+    // derivation and for why the gyro is not fused in here.
+    const auto twist_from = [this](const double *anchor_angle, const double *angle_now, double dt)
+    {
+        double w[4] = {0, 0, 0, 0};
+        for (int i = 0; i < wheel_count_; ++i)
+            w[i] = (angle_now[i] - anchor_angle[i]) / dt;
+
+        const double R = wheel_radius_, c = half_track_;
+        double advz_fk, advx, rot;
+        if (base_kinematics_ == BaseKinematics::Differential)
+        {
+            // w[0] = left, w[1] = right. A differential base cannot translate sideways, so advx is
+            // structurally zero here -- not measured-as-zero, but absent from the model.
+            advz_fk = R * 0.5       * (w[1] + w[0]);
+            advx    = 0.0;
+            rot     = R / (2.0 * c) * (w[1] - w[0]);
+        }
+        else
+        {
+            advz_fk = R * 0.25      * ( w[0] + w[1] + w[2] + w[3]);
+            advx    = R * 0.25      * (-w[0] + w[1] + w[2] - w[3]);
+            rot     = R / (4.0 * c) * ( w[0] - w[1] + w[2] - w[3]);
+        }
+
+        // apply_pending_speed_command ADDS WHEEL_CENTROID_OFFSET*rot to advz, so a true inverse must
+        // subtract it. A no-op at 0.0, wired in now so the two cannot silently stop being inverses on
+        // the day the one-pivot trial in the header enables the offset.
+        const double advz = advz_fk - WHEEL_CENTROID_OFFSET * rot;
+
+        // (0) = -side, (1) = forward: the shadow_velocity_local convention that pose_data.adv/side and
+        // update_base_state's advVz/advVx already assume, so nothing downstream changes.
+        return std::tuple{Eigen::Vector2f{static_cast<float>(-advx), static_cast<float>(advz)}, rot,
+                          std::array{w[0], w[1], w[2], w[3]}};
+    };
+
+    // First usable sample: anchor BOTH sets together and produce nothing. Seeding only the step anchor
+    // here would leave pub_angle at zero until the first publishing cycle, and by then `seeded` is
+    // already true -- so that publish would difference the ABSOLUTE encoder angle against zero and
+    // report the robot's whole history as one interval's motion. Invisible at world start, where the
+    // angles are ~0, and badly wrong whenever this component restarts against a world already running.
+    if (not wheel_odo_.seeded)
+    {
+        std::copy(std::begin(angle), std::end(angle), std::begin(wheel_odo_.step_angle));
+        std::copy(std::begin(angle), std::end(angle), std::begin(wheel_odo_.pub_angle));
+        wheel_odo_.step_sim_t = sim_seconds;
+        wheel_odo_.pub_sim_t  = sim_seconds;
+        wheel_odo_.seeded = true;
+        wheel_odo_.valid  = false;
+        return false;
+    }
+
+    // dt is NOT constant: hibernation drops the period to 500 ms, and Period.Compute (8) sits below
+    // basicTimeStep so Webots rounds every step anyway. Hence sim time, never a configured period.
+    // Reject dt == 0 (paused simulator: wb_robot_step returns without advancing) and, on the per-step
+    // anchor, anything over a second (resumed pause, blocked step).
+    if (const double step_dt = sim_seconds - wheel_odo_.step_sim_t;
+        step_dt > 1e-4 and step_dt < 1.0)
+    {
+        auto [v, rot, w] = twist_from(wheel_odo_.step_angle, angle, step_dt);
+        wheel_odo_.step_v_local = v;
+        wheel_odo_.step_rot     = rot;
+        std::copy(w.begin(), w.end(), std::begin(wheel_odo_.step_w));
+    }
+    std::copy(std::begin(angle), std::end(angle), std::begin(wheel_odo_.step_angle));
+    wheel_odo_.step_sim_t = sim_seconds;
+
+    if (publishing)
+    {
+        // The publish interval is legitimately long under hibernation (500 ms steps), so CLAMP rather
+        // than reject at the top end here -- unlike the per-step anchor above, a long interval is the
+        // normal case, not a fault. The mean over it is still exact.
+        const double pub_dt = sim_seconds - wheel_odo_.pub_sim_t;
+        if (pub_dt > 1e-4)
+        {
+            auto [v, rot, w] = twist_from(wheel_odo_.pub_angle, angle, pub_dt);
+            if constexpr (BRIDGE_WHEEL_ODOM_EMA_ALPHA < 1.0)
+                v = static_cast<float>(BRIDGE_WHEEL_ODOM_EMA_ALPHA) * v
+                  + static_cast<float>(1.0 - BRIDGE_WHEEL_ODOM_EMA_ALPHA) * wheel_odo_.v_local;
+            wheel_odo_.v_local = v;
+            wheel_odo_.rot     = rot;
+            wheel_odo_.pub_dt  = pub_dt;
+            wheel_odo_.valid   = true;
+        }
+        // Re-anchor even when the sample was rejected, or the next publish differences across the gap.
+        std::copy(std::begin(angle), std::end(angle), std::begin(wheel_odo_.pub_angle));
+        wheel_odo_.pub_sim_t = sim_seconds;
+    }
+
+    return wheel_odo_.valid;
+}
+
+#if BRIDGE_WHEEL_ODOM_DIAG
+// The encoder-derived twist and the supervisor's, in the SAME cycle and both per-SIM-second, so no
+// k_wall can confound the comparison and the difference between them IS the mecanum slip.
+//
+// What each group settles:
+//   wh_*   vs sup_*   -- signs and scale of the forward kinematics, then the slip magnitude
+//   pub_*  vs wh_*    -- that the publish-interval mean is a mean and not an aliased snapshot
+//   gyro_z vs sup_wz  -- the gyro axis, for whoever integrates the IMU downstream
+//   gyro_x/y          -- catches a tilt that would invalidate the upright assumption
+//   yaw_raw           -- UNSHIFTED atan2(R01,R00); unwrap offline. Note it is -theta while
+//                        rotationMatrixToEulerZYX (used by the IMU servants) gives +theta, so
+//                        d(yaw_raw)/dt anti-correlates with wz. That is pre-existing, not a
+//                        regression, and it is why the old yawrate_diag.csv looked inverted.
+void SpecificWorker::log_wheel_odom_diag(double sim_now_ms, long wall_ms, bool publishing,
+                                         const Eigen::Vector2f &sup_v_local_sim, double sup_wz,
+                                         const double *orientation_matrix)
+{
+    static std::ofstream diag("wheel_odom_diag.csv");
+    static bool hdr = false;
+    if (not hdr)
+    {
+        diag.imbue(std::locale::classic());   // never emit a comma decimal separator
+        diag << "sim_t,wall_ms,pub_dt,valid,publishing,w0,w1,w2,w3,"
+                "wh_advx,wh_advz,wh_rot,pub_advx,pub_advz,pub_rot,"
+                "gyro_x,gyro_y,gyro_z,sup_advx,sup_advz,sup_wz,yaw_raw,"
+                "cmd_advx,cmd_advz,cmd_rot,sim_wall_rate\n";
+        hdr = true;
+    }
+    const double *g = gyroscope != nullptr ? gyroscope->getValues() : nullptr;
+    diag << sim_now_ms / 1000.0
+         << ',' << wall_ms
+         << ',' << wheel_odo_.pub_dt
+         << ',' << (wheel_odo_.valid ? 1 : 0)
+         << ',' << (publishing ? 1 : 0);
+    for (const double w : wheel_odo_.step_w) diag << ',' << w;
+    diag << ',' << -wheel_odo_.step_v_local(0)   // back to (advx, advz) for readability
+         << ',' <<  wheel_odo_.step_v_local(1)
+         << ',' <<  wheel_odo_.step_rot
+         << ',' << -wheel_odo_.v_local(0)
+         << ',' <<  wheel_odo_.v_local(1)
+         << ',' <<  wheel_odo_.rot
+         << ',' << (g != nullptr ? g[0] : 0.0)
+         << ',' << (g != nullptr ? g[1] : 0.0)
+         << ',' << (g != nullptr ? g[2] : 0.0)
+         << ',' << -sup_v_local_sim(0)
+         << ',' <<  sup_v_local_sim(1)
+         << ',' <<  sup_wz
+         << ',' << atan2(orientation_matrix[1], orientation_matrix[0])
+         << ',' << last_applied_cmd_.advx
+         << ',' << last_applied_cmd_.advz
+         << ',' << last_applied_cmd_.rot
+         << ',' << sim_wall_rate_ << '\n';
+}
+#endif
 
 void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long timestamp)
 {
@@ -453,9 +708,44 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     // ... and scale to per-WALL-second, because that is the clock our timestamps use. Both linear and
     // angular: the unit mismatch applies identically to translation, it was simply only measured on
     // rotation (which room_concept arbitrates against the room geometry, so it was visible there).
-    const Eigen::Vector2f shadow_velocity_local =
-        static_cast<float>(k_wall) * (rt_rotation_matrix.inverse() * shadow_velocity_world);
+    const Eigen::Vector2f shadow_velocity_local_sim = rt_rotation_matrix.inverse() * shadow_velocity_world;
+    const Eigen::Vector2f shadow_velocity_local = static_cast<float>(k_wall) * shadow_velocity_local_sim;
     const double shadow_rot_wall = k_wall * shadow_velocity[5];
+
+    // OmniRobot keeps the supervisor's values and the step rate: it is the ground-truth reference the
+    // new wheel channel is measured against, and getBaseState() callers expect a fresh snapshot every
+    // cycle regardless of how often FullPose goes out. So refresh it BEFORE the publish gate below.
+    update_base_state(shadow_position, shadow_velocity_local, shadow_rot_wall);
+
+    // FullPose is the WHEEL channel and goes out at its own, slower rate -- the IMU keeps the step
+    // rate, and that gap is what a consumer's high-rate injection propagates across. Sample the
+    // encoders every step regardless, so the per-step diagnostic columns stay populated.
+    const double sim_now_ms = _robot->getTime() * 1000.0;
+    const bool publishing = sim_now_ms >= next_fullpose_publish_ms;
+    update_wheel_odometry(_robot->getTime(), publishing);
+
+#if BRIDGE_WHEEL_ODOM_DIAG
+    log_wheel_odom_diag(sim_now_ms, timestamp, publishing,
+                        shadow_velocity_local_sim, shadow_velocity[5], shadow_orientation);
+#endif
+
+    if (not publishing) return;
+    next_fullpose_publish_ms = sim_now_ms + fullpose_publish_period_ms;
+
+    // Both channels are per SIM second, exactly like getVelocity(), so they take the SAME single
+    // k_wall. That holds only because update_wheel_odometry divides by robot->getTime() deltas --
+    // differencing over `timestamp` (wall ms) would already be per-wall-second and k_wall would be
+    // counted twice (~13% at the measured 1.068 sim/wall ratio).
+    Eigen::Vector2f velocity_local = shadow_velocity_local;
+    double          rot_velocity   = shadow_rot_wall;
+    if (fullpose_velocity_source_ == VelocitySource::Wheels)
+    {
+        // No fallback to the supervisor when the wheel sample is not yet valid: the held value is 0,
+        // which is the truth at t=0, and a silent per-cycle source switch would be worse than one
+        // cycle of zeros.
+        velocity_local = static_cast<float>(k_wall) * wheel_odo_.v_local;
+        rot_velocity   = k_wall * wheel_odo_.rot;
+    }
 
     // Noise, if any, is the consumer's business: see RoomConcept.OdometryNoiseFactor.
     RoboCompFullPoseEstimation::FullPoseEuler pose_data;
@@ -471,23 +761,35 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     pose_data.rz = orientation;  // Ángulo Z ya calculado
 
     // Velocidades en world frame
-    pose_data.vx = -shadow_velocity_local(0);
-    pose_data.vy = -shadow_velocity_local(1);
+    pose_data.vx = -velocity_local(0);
+    pose_data.vy = -velocity_local(1);
     pose_data.vz = 0;
     pose_data.vrx = 0;
     pose_data.vry = 0;
-    pose_data.vrz = static_cast<float>(shadow_rot_wall);
-    
+    pose_data.vrz = static_cast<float>(rot_velocity);
+
     // Velocidades en robot frame
-    pose_data.adv = shadow_velocity_local(1);  //y
-    pose_data.side = -shadow_velocity_local(0);
-    pose_data.rot = static_cast<float>(shadow_rot_wall); // per WALL second, see sim_wall_rate_
+    pose_data.adv = velocity_local(1);  //y
+    pose_data.side = -velocity_local(0);
+    pose_data.rot = static_cast<float>(rot_velocity); // per WALL second, see sim_wall_rate_
 
-    pose_data.timestamp = timestamp;
+    // Provenance and both clocks. `timestamp` stays wall-clock so latency and staleness still work;
+    // `simTimestamp` is the instant this refers to on the sim clock, which is the one to integrate
+    // over -- the velocities above are per SIM second. Velocity is sampled at the publish instant, so
+    // there is no acquisition lag to subtract here (unlike the lidars).
+    pose_data.source       = "webots-bridge";
+    pose_data.timestamp    = timestamp;
+    pose_data.simTimestamp = static_cast<long>(sim_now_ms);
+    pose_data.simulated    = true;
 
-    // Refresh the snapshot served by OmniRobot_getBaseState() while we already hold
-    // the freshly read supervisor data, so that RPC never has to query Webots.
-    update_base_state(shadow_position, shadow_velocity_local, shadow_rot_wall);
+    // Nominal, config-driven. Measuring the simulator's own velocity noise would give ~0, and a zero
+    // variance reads downstream as infinite confidence; the real base controller overwrites these once
+    // calibrated. Only the velocity block is known, so pose and acceleration say "unknown".
+    pose_data.velCov.m00 = static_cast<float>(nominal_vel_var_);   // vx
+    pose_data.velCov.m11 = static_cast<float>(nominal_vel_var_);   // vy
+    pose_data.velCov.m55 = static_cast<float>(nominal_rot_var_);   // vrz
+    pose_data.poseCov.m00 = -1.f;
+    pose_data.accCov.m00  = -1.f;
 
     this->fullposeestimationpub_pubproxy->newFullPose(pose_data);
 }
@@ -600,9 +902,19 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
     RoboCompLaser::LaserConfData newLaserConfData;
     RoboCompLidar3D::TData newLidar3dData;
 
-    // General Lidar values
-    newLidar3dData.timestamp = timestamp;
-    newLidar3dData.period = fps.get_period();
+    // General Lidar values.
+    //
+    // The scan was rendered at the last multiple of the lidar's sampling period, which can be a full
+    // sensor_period before now -- so stamping it with the loop time (as this did) overstates its
+    // freshness by up to that much. A consumer anchoring an optimized pose on this instant and
+    // propagating odometry forward from it eats that error directly: at 1.5 rad/s, 32 ms is 2.7 deg.
+    // `period` likewise reported fps.get_period(), the LOOP period, which left no way to even infer
+    // the staleness; it is the device's sampling period.
+    const double lidar_sim_now_ms = robot != nullptr ? robot->getTime() * 1000.0 : 0.0;
+    newLidar3dData.timestamp    = acquisition_wall_ms(timestamp, lidar_sim_now_ms, sensor_period);
+    newLidar3dData.simTimestamp = static_cast<long>(acquisition_sim_ms(lidar_sim_now_ms, sensor_period));
+    newLidar3dData.simulated    = true;
+    newLidar3dData.period = static_cast<float>(sensor_period);
     newLaserConfData.maxDegrees = fov;
     newLaserConfData.maxRange = maxRange;
     newLaserConfData.minRange = minRange;
@@ -981,13 +1293,38 @@ void SpecificWorker::apply_pending_speed_command()
     // See specificworker.h for the one-pivot trial that settles it.
     const double advz = advz_cmd + WHEEL_CENTROID_OFFSET * cmd.rot;
 
-    const double speeds[4] = {1.0 / WHEEL_RADIUS * (advz - advx + (LX + LY) * cmd.rot),
-                              1.0 / WHEEL_RADIUS * (advz + advx - (LX + LY) * cmd.rot),
-                              1.0 / WHEEL_RADIUS * (advz + advx + (LX + LY) * cmd.rot),
-                              1.0 / WHEEL_RADIUS * (advz - advx - (LX + LY) * cmd.rot)};
+#if BRIDGE_WHEEL_ODOM_DIAG
+    last_applied_cmd_ = {advx, advz_cmd, cmd.rot};   // what the wheels were actually told
+#endif
 
-    for (int i = 0; i < 4; i++)
-        motors[i]->setVelocity(speeds[i]);
+    double speeds[4] = {0, 0, 0, 0};
+    if (base_kinematics_ == BaseKinematics::Differential)
+    {
+        // A differential base has no lateral degree of freedom, so advx is dropped rather than
+        // silently folded into something else. Say so once: a caller commanding side motion is
+        // working from a wrong model of the robot and should hear about it, but not 125 times a
+        // second.
+        if (std::fabs(advx) > 1e-4 and not warned_advx_ignored_)
+        {
+            std::cout << "setSpeedBase: advx=" << advx << " m/s ignored -- this base is differential "
+                      << "and cannot translate sideways." << std::endl;
+            warned_advx_ignored_ = true;
+        }
+        speeds[0] = (advz - half_track_ * cmd.rot) / wheel_radius_;   // wheel_left
+        speeds[1] = (advz + half_track_ * cmd.rot) / wheel_radius_;   // wheel_right
+    }
+    else
+    {
+        const double c = half_track_;
+        speeds[0] = (advz - advx + c * cmd.rot) / wheel_radius_;
+        speeds[1] = (advz + advx - c * cmd.rot) / wheel_radius_;
+        speeds[2] = (advz + advx + c * cmd.rot) / wheel_radius_;
+        speeds[3] = (advz - advx - c * cmd.rot) / wheel_radius_;
+    }
+
+    for (int i = 0; i < wheel_count_; i++)
+        if (motors[i] != nullptr)
+            motors[i]->setVelocity(speeds[i]);
 }
 
 #pragma endregion OmniRobot
@@ -1307,19 +1644,46 @@ void SpecificWorker::update_imu_data(long timestamp)
 {
     RoboCompIMU::DataImu data{};
 
+    // The IMU is sampled every step, so its acquisition instant IS the current step -- no lag to
+    // subtract, unlike the lidars. simTimestamp is the clock to integrate over: the gyro reports rad
+    // per SIMULATION second, so a consumer integrating it against wall-clock dt over-counts by exactly
+    // the sim/wall ratio (the same defect commit 5968a65 fixed for the published velocities).
+    const long sim_ts = robot != nullptr ? static_cast<long>(robot->getTime() * 1000.0) : 0;
+
+    // Diagonal, isotropic, nominal. See the header for why measuring the simulator's own noise would
+    // be worse than useless here. Off-diagonals stay zero: uncorrelated is the honest claim.
+    const auto diag_cov = [](double var)
+    {
+        RoboCompIMU::Cov3 c{};
+        c.m00 = c.m11 = c.m22 = static_cast<float>(var);
+        return c;
+    };
+    const RoboCompIMU::Cov3 unknown_cov = []{ RoboCompIMU::Cov3 c{}; c.m00 = -1.f; return c; }();
+
     if (accelerometer != nullptr)
         if (const double *values = accelerometer->getValues(); values != nullptr)
-            data.acc = {(float)values[0], (float)values[1], (float)values[2], timestamp};
+            data.acc = {(float)values[0], (float)values[1], (float)values[2],
+                        diag_cov(nominal_acc_var_), timestamp, sim_ts, true};
 
     if (gyroscope != nullptr)
         if (const double *values = gyroscope->getValues(); values != nullptr)
-            data.gyro = {(float)values[0], (float)values[1], (float)values[2], timestamp};
+            data.gyro = {(float)values[0], (float)values[1], (float)values[2],
+                         diag_cov(nominal_gyro_var_), timestamp, sim_ts, true};
 
     if (robotNode != nullptr)
     {
+        // Still the supervisor's orientation, standing in for the internal fusion a real IMU runs.
+        // It is exact, hence "unknown" rather than a nominal variance -- claiming a number here would
+        // be inventing one, and a zero would read as infinite confidence.
         const auto [roll, pitch, yaw] = rotationMatrixToEulerZYX(robotNode->getOrientation());
-        data.rot = {roll, pitch, yaw, timestamp};
+        data.rot = {roll, pitch, yaw, unknown_cov, timestamp, sim_ts, true};
     }
+
+    // Never populated by this bridge; say so rather than publishing a confident zero.
+    data.mag.cov = unknown_cov;
+    data.mag.timestamp = timestamp;
+    data.mag.simTimestamp = sim_ts;
+    data.mag.simulated = true;
 
     data.temperature = 0.f;
 

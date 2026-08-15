@@ -38,6 +38,34 @@ Doors = ["DOOR_0", "DOOR_1"]
 Compute = 10
 Emergency = 500
 
+# Source of the VELOCITY fields published on FullPoseEstimationPub. The pose fields are supervisor
+# ground truth either way, and OmniRobot is unaffected by this setting.
+#   "wheels"     - wheel-encoder forward kinematics: the exact inverse of the mecanum IK in
+#                  apply_pending_speed_command(), which is what SVD48VBase computes on the real
+#                  robot (inv_m_wheels @ get_speed()). Includes real wheel slip.
+#   "supervisor" - the historical robotNode->getVelocity() ground truth. Kept for A/B measurement.
+#
+# PublishPeriod is in ms. 100 = 10 Hz, matching the real base (SVD48VBase: Period.Compute = 100).
+# The IMU stays at the step rate, and that rate GAP is what a consumer's high-rate injection
+# propagates across. The published velocity is differenced over this whole interval, so it is the
+# exact mean over it, not a sample of one step.
+#
+# NominalVelVar / NominalRotVar are per-sample variances in SI units squared, (m/s)^2 and (rad/s)^2.
+# The simulator's own velocity noise is ~0 and a zero variance reads downstream as infinite
+# confidence, so publish plausible real-robot figures and let the real base overwrite them once
+# calibrated.
+[FullPose]
+VelocitySource = "wheels"
+PublishPeriod = 100
+NominalVelVar = 1e-4
+NominalRotVar = 1e-4
+
+# Per-sample variances for the IMU, SI units squared: (rad/s)^2 and (m/s^2)^2. Nominal for the same
+# reason as above -- the simulated gyro is exact and the accelerometer only quantises at 0.001.
+[IMU]
+NominalGyroVar = 1e-5
+NominalAccVar = 1e-3
+
 [Ice]
 Warn.Connections = "0"
 Trace.Network = "0"

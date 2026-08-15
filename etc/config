@@ -11,6 +11,7 @@ Endpoints.Lidar3D = "tcp -p 11988"
 Endpoints.OmniRobot = "tcp -p 10004"
 Endpoints.VisualElements = "tcp -p 10005"
 Endpoints.Webots2Robocomp = "tcp -p 10006"
+Endpoints.DoorControl = "tcp -p 10017"
 
 # Endpoints for subscriptions interfaces
 Endpoints.JoystickAdapterTopic = "tcp -p 11025"
@@ -20,8 +21,15 @@ Endpoints.JoystickAdapterPrefix = ""
 Proxies.FullPoseEstimationPubPrefix = ""
 
 # Step/actuation rate. This is what bounds how quickly a setSpeedBase command
-# reaches the wheels, so lower it to tighten the control loop. Must be a multiple
-# of the world's basicTimeStep (16 in Shadow_v2.wbt).
+# reaches the wheels, so lower it to tighten the control loop.
+#
+# Must be a multiple of the LOADED world's basicTimeStep -- Webots silently rounds UP to one
+# otherwise, so a value below it buys nothing and misreports the rate. The world normally run here is
+# worlds/piso/piso.wbt, which is basicTimeStep 8, so this is honoured exactly. Several other Shadow
+# worlds are still at 16 (a few at 30/33); loading one of those silently halves every rate below.
+#
+# This also sets the IMU sampling rate, which is the fast channel a consumer integrates between
+# slower pose estimates: 8 ms = 125 Hz, against room_concept's IMU thread polling at ~108 Hz.
 Period.Compute = 8
 
 # Sampling rate for the heavy sensors (lidars, 360 camera, zed). Independent of
@@ -29,6 +37,43 @@ Period.Compute = 8
 # cloud and image processing cost. Clamped up to Period.Compute if set lower.
 # Defaults to Period.Compute when absent.
 Period.Sensors = 32
+
+# Running gear of the robot in the LOADED world -- these must agree or the bridge opens motors that
+# do not exist.
+#   "mecanum"      - Shadow.proto: four mecanum wheels. What every world except piso.wbt instantiates.
+#   "differential" - ShadowDiff.proto: two drive wheels on the lateral axis plus front/back casters,
+#                    the real robot's layout. Defaults R and half-track to the real robot's own
+#                    numbers (SVD48VBase/etc/config_diferential: wheelRadius 100 mm, axesLength
+#                    518 mm), so nothing here is fitted to the simulator. advx is refused: a
+#                    differential base cannot strafe.
+# Base.WheelRadius / Base.HalfTrack override the defaults if a world's robot differs.
+Base.Kinematics = "differential"
+
+# Source of the VELOCITY fields published on FullPoseEstimationPub. The pose fields are supervisor
+# ground truth either way, and OmniRobot is unaffected by this setting.
+#   "wheels"     - wheel-encoder forward kinematics: the exact inverse of the mecanum IK in
+#                  apply_pending_speed_command(), which is what SVD48VBase computes on the real
+#                  robot (inv_m_wheels @ get_speed()). Includes real wheel slip.
+#   "supervisor" - the historical robotNode->getVelocity() ground truth. Kept for A/B measurement.
+# MUST be quoted: ConfigLoader throws on a bare word and aborts startup rather than defaulting.
+FullPose.VelocitySource = "wheels"
+
+# Publish period for the wheel-odometry channel, ms. 100 = 10 Hz, matching the real base
+# (SVD48VBase/etc/config_omnidirectional: Period.Compute = 100). The IMU stays at the step rate, and
+# that rate GAP is what a consumer's high-rate injection propagates across. The published velocity is
+# differenced over this whole interval, so it is the exact mean over it, not a sample of one step.
+FullPose.PublishPeriod = 100
+
+# Nominal per-sample variances, SI units squared. The simulated gyro and encoders are EXACT and the
+# accelerometer only quantises at 0.001, so a measured covariance here would be ~0 -- and a zero
+# variance reads downstream as infinite confidence, which wrecks any filter consuming it. So publish
+# plausible real-robot figures instead; the real IMU and base controller overwrite them once
+# calibrated. For scale: room_concept measured sigma_v = 3.9e-7 m/sqrt(s) over 24434 parked frames in
+# this simulator, five orders below what its own motion prior is configured with.
+IMU.NominalGyroVar     = 1e-5
+IMU.NominalAccVar      = 1e-3
+FullPose.NominalVelVar = 1e-4
+FullPose.NominalRotVar = 1e-4
 
 Period.Emergency = 500
 Camera.ZED.points3D = False
