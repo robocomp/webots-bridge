@@ -95,13 +95,13 @@ FullPose.PublishPeriod = 100
 # Suggested starting values (encoder-plausible; scale_w is the measured scrubbing figure):
 #   WheelSigmaV = 0.006   WheelSigmaW = 0.010   WheelScaleV = 0.0   WheelScaleW = 0.06
 #   GyroSigma   = 0.002   GyroBias    = 0.0
-SensorNoise.Enabled     = false
-SensorNoise.WheelSigmaV = 0.0
-SensorNoise.WheelSigmaW = 0.0
-SensorNoise.WheelScaleV = 0.0
-SensorNoise.WheelScaleW = 0.0
-SensorNoise.GyroSigma   = 0.0
-SensorNoise.GyroBias    = 0.0
+SensorNoise.Enabled     = true
+SensorNoise.WheelSigmaV = 0.006   # m/sqrt(s)   encoder velocity noise: ~19 mm/s of jitter at 10 Hz
+SensorNoise.WheelSigmaW = 0.010   # rad/sqrt(s) wheel-derived yaw-rate noise
+SensorNoise.WheelScaleV = 0.0     # no odometer scale error assumed; raise if the real base shows one
+SensorNoise.WheelScaleW = 0.06    # THE SCRUBBING ERROR — the measured wheel/gyro ratio is 1.05-1.08
+SensorNoise.GyroSigma   = 0.002   # rad/sqrt(s) — 3x quieter than the wheels, and with NO scale
+SensorNoise.GyroBias    = 0.0     # a real gyro drifts; left at 0 until there is a figure to use
 
 IMU.NominalGyroVar     = 1e-5
 IMU.NominalAccVar      = 1e-3
