@@ -117,6 +117,22 @@ void SpecificWorker::initialize()
         try { wheel_radius_ = configLoader.get<double>("Base.WheelRadius"); } catch(...) {}
         try { half_track_   = configLoader.get<double>("Base.HalfTrack"); } catch(...) {}
 
+        // ── Synthetic sensor error — see the header for why the two channels differ ──
+        try { sensor_noise_enabled_ = configLoader.get<bool>("SensorNoise.Enabled"); } catch(...) {}
+        try { wheel_sigma_v_ = configLoader.get<double>("SensorNoise.WheelSigmaV"); } catch(...) {}
+        try { wheel_sigma_w_ = configLoader.get<double>("SensorNoise.WheelSigmaW"); } catch(...) {}
+        try { wheel_scale_v_ = configLoader.get<double>("SensorNoise.WheelScaleV"); } catch(...) {}
+        try { wheel_scale_w_ = configLoader.get<double>("SensorNoise.WheelScaleW"); } catch(...) {}
+        try { gyro_sigma_    = configLoader.get<double>("SensorNoise.GyroSigma"); } catch(...) {}
+        try { gyro_bias_     = configLoader.get<double>("SensorNoise.GyroBias"); } catch(...) {}
+        if (sensor_noise_enabled_)
+            std::printf("[SensorNoise] ON — wheels: sigma_v=%.5g m/sqrt(s) sigma_w=%.5g rad/sqrt(s) "
+                        "scale_v=%+.4f scale_w=%+.4f | gyro: sigma=%.5g rad/sqrt(s) bias=%+.5g rad/s\n"
+                        "[SensorNoise] ⚠ this bridge is NO LONGER publishing ground truth; every "
+                        "consumer sees the corrupted stream, which is the point.\n",
+                        wheel_sigma_v_, wheel_sigma_w_, wheel_scale_v_, wheel_scale_w_,
+                        gyro_sigma_, gyro_bias_);
+
         try { nominal_gyro_var_ = configLoader.get<double>("IMU.NominalGyroVar"); } catch(...) {}
         try { nominal_acc_var_  = configLoader.get<double>("IMU.NominalAccVar"); } catch(...) {}
         try { nominal_vel_var_  = configLoader.get<double>("FullPose.NominalVelVar"); } catch(...) {}
@@ -126,6 +142,7 @@ void SpecificWorker::initialize()
         // they follow it, which is the historical behaviour.
         const int compute_period = this->getPeriod("Compute");
         sensor_period = compute_period;
+        imu_step_period_ms_ = compute_period;
         try { sensor_period = configLoader.get<int>("Period.Sensors"); } catch(...) {}
         if(sensor_period < compute_period)
         {
@@ -654,10 +671,12 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     const double* shadow_velocity = robotNode->getVelocity();
     const float orientation = atan2(shadow_orientation[1], shadow_orientation[0]) - M_PI_2;
 
-    // Webots reports velocities per SIMULATION second; every timestamp we publish is wall-clock.
-    // Convert, so a consumer integrating rate*dt(wall) gets the rotation and translation that really
-    // happened. See update_sim_wall_rate and the note on sim_wall_rate_ in the header for the
-    // measurement that motivated this (6.7% of spurious rotation in room_concept's odometry prior).
+    // Webots reports velocities per SIMULATION second, and that is now what we publish: `simTimestamp`
+    // carries the clock they are measured in, so a consumer integrates the true rate over the matching
+    // clock and needs no correction. sim_wall_rate_ is still estimated -- acquisition_wall_ms() needs
+    // it to turn a sensor's age in sim-ms into an age in wall-ms -- but it no longer scales any
+    // published velocity. See the BRIDGE_WALL_TIME_VELOCITIES note in the header for why the scaling
+    // went away and what turning it back on would mean.
     update_sim_wall_rate(_robot->getTime(), timestamp);
 #if BRIDGE_WALL_TIME_VELOCITIES
     const double k_wall = sim_wall_rate_;
@@ -747,7 +766,24 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
         rot_velocity   = k_wall * wheel_odo_.rot;
     }
 
-    // Noise, if any, is the consumer's business: see RoomConcept.OdometryNoiseFactor.
+    // ── SYNTHETIC WHEEL ERROR ────────────────────────────────────────────────────────────────────
+    // Applied HERE, on the values actually published, so every consumer sees one consistent corrupted
+    // stream — which is the whole difference between this and a per-consumer test hook. The scale is
+    // constant for the run (a wheel radius does not change per sample); the noise is a density, so the
+    // rate perturbation is sigma/sqrt(dt) and the accumulated increment has variance sigma^2*dt.
+    // dt is the PUBLISH period, because that is the interval a consumer integrates this sample across.
+    if (sensor_noise_enabled_)
+    {
+        const double dt_pub = std::max(1e-3, fullpose_publish_period_ms * 1e-3);
+        const double inv_sqrt_dt = 1.0 / std::sqrt(dt_pub);
+        velocity_local.x() = static_cast<float>(velocity_local.x() * (1.0 + wheel_scale_v_)
+                                                + generate_noise(wheel_sigma_v_ * inv_sqrt_dt));
+        velocity_local.y() = static_cast<float>(velocity_local.y() * (1.0 + wheel_scale_v_)
+                                                + generate_noise(wheel_sigma_v_ * inv_sqrt_dt));
+        rot_velocity = rot_velocity * (1.0 + wheel_scale_w_)
+                     + generate_noise(wheel_sigma_w_ * inv_sqrt_dt);
+    }
+
     RoboCompFullPoseEstimation::FullPoseEuler pose_data;
 
     // Posición
@@ -1667,8 +1703,30 @@ void SpecificWorker::update_imu_data(long timestamp)
 
     if (gyroscope != nullptr)
         if (const double *values = gyroscope->getValues(); values != nullptr)
-            data.gyro = {(float)values[0], (float)values[1], (float)values[2],
-                         diag_cov(nominal_gyro_var_), timestamp, sim_ts, true};
+        {
+            // ── SYNTHETIC GYRO ERROR, DELIBERATELY UNLIKE THE WHEELS ─────────────────────────────
+            // A gyro does not scrub, so it gets NO scale — only its own noise and a slow bias, which
+            // is the error a rate gyro actually has. Keeping these independent is what lets a consumer
+            // that prefers the gyro for heading show a real advantage, exactly as on hardware; sharing
+            // one error model between the channels would erase that and misrepresent the sensor.
+            // dt here is the STEP period (the IMU samples every step), not the wheel publish period —
+            // the same sigma therefore means the same accumulated drift on both channels.
+            double gz = values[2];
+            if (sensor_noise_enabled_)
+            {
+                const double dt_step = std::max(1e-3, static_cast<double>(imu_step_period_ms_) * 1e-3);
+                gz += gyro_bias_ + generate_noise(gyro_sigma_ / std::sqrt(dt_step));
+            }
+            // The published variance must describe the data actually sent: a consumer weighting this
+            // by the nominal figure while the samples carry injected noise would be given a covariance
+            // that lies, and every downstream precision would be wrong in the same direction.
+            const double gyro_var = nominal_gyro_var_
+                                  + (sensor_noise_enabled_ ? gyro_sigma_ * gyro_sigma_
+                                                             / std::max(1e-3, static_cast<double>(imu_step_period_ms_) * 1e-3)
+                                                           : 0.0);
+            data.gyro = {(float)values[0], (float)values[1], (float)gz,
+                         diag_cov(gyro_var), timestamp, sim_ts, true};
+        }
 
     if (robotNode != nullptr)
     {

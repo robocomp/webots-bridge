@@ -70,6 +70,39 @@ FullPose.PublishPeriod = 100
 # plausible real-robot figures instead; the real IMU and base controller overwrite them once
 # calibrated. For scale: room_concept measured sigma_v = 3.9e-7 m/sqrt(s) over 24434 parked frames in
 # this simulator, five orders below what its own motion prior is configured with.
+# ── Synthetic sensor error ────────────────────────────────────────────────────
+# This bridge publishes the supervisor's GROUND TRUTH. Measured in room_concept over 24434 parked
+# frames, the odometry that produces has sigma_v = 3.9e-7 m/sqrt(s) -- five to six orders below what
+# every consumer's motion model is configured for. So in simulation the motion prior does no work,
+# and anything tuned against it is tuned against a robot that does not exist. Turn this on to make
+# the simulated sensors behave like sensors.
+#
+# sigma_* are DENSITIES (m/sqrt(s), rad/sqrt(s)): the rate is perturbed by sigma/sqrt(dt) so the
+# accumulated increment has variance sigma^2*dt. One constant therefore means the same thing on the
+# 10 Hz wheel channel and the 125 Hz IMU channel.
+# scale_* are CONSTANT fractional errors held for the whole run (a wheel radius does not change per
+# sample): reported = true * (1 + s).
+#
+# ★ THE WHEELS AND THE GYRO ARE DELIBERATELY DIFFERENT. A gyro does not scrub, so it gets NO scale --
+# only its own noise and a slow bias. A differential base over-reports rotation because it turns BY
+# scrubbing (measured wheel/gyro ratio ~1.05-1.08 on this robot), which is precisely why a gyro
+# heading path is worth having. One shared error model would simulate a gyro that scrubs and argue
+# against a feature that is genuinely valuable on hardware.
+#
+# ⚠ WITH THIS ON THE BRIDGE NO LONGER PUBLISHES GROUND TRUTH, and every consumer sees it -- which is
+# the point, and also why runs with it on are not comparable to runs without. It is announced at
+# startup as "[SensorNoise] ON".
+# Suggested starting values (encoder-plausible; scale_w is the measured scrubbing figure):
+#   WheelSigmaV = 0.006   WheelSigmaW = 0.010   WheelScaleV = 0.0   WheelScaleW = 0.06
+#   GyroSigma   = 0.002   GyroBias    = 0.0
+SensorNoise.Enabled     = false
+SensorNoise.WheelSigmaV = 0.0
+SensorNoise.WheelSigmaW = 0.0
+SensorNoise.WheelScaleV = 0.0
+SensorNoise.WheelScaleW = 0.0
+SensorNoise.GyroSigma   = 0.0
+SensorNoise.GyroBias    = 0.0
+
 IMU.NominalGyroVar     = 1e-5
 IMU.NominalAccVar      = 1e-3
 FullPose.NominalVelVar = 1e-4

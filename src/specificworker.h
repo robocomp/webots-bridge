@@ -120,15 +120,34 @@ using namespace std;
 //      constant, not the expression, so this comment stays true.
 #define WHEEL_CENTROID_OFFSET 0.0  // [m] 0.0 = off; the measured value is 0.027 (verify the sign)
 
-// Publish velocities in per-WALL-second units (see sim_wall_rate_ below). 1 = on, 0 = off.
-// Kept as a toggle because one question is still open: on sustained pivots the localizer's
-// prediction early-exit reads below the pre-fix baseline (95/91% against 99.4/98.8%) and the scaling
-// does not explain it -- an angular-only variant was A/B'd and came out indistinguishable
-// (94.5/90.3%, gate margins equal to 3 dp), so that variant is gone. The samples were never
-// comparable: the baseline is 42k frames of incidental rotation, every post-fix number a handful of
-// sustained 340-1100 deg pivots. Settling it needs 0 against 1 on ONE protocol, not yet run.
+// Publish velocities in per-WALL-second units instead of the true per-SIM-second ones. NOW OFF.
+//
+// This existed because there was no simulation clock on the wire. Webots reports velocities per
+// simulation second, every timestamp we emitted was wall-clock, and a consumer integrating
+// rate*dt(wall) therefore over-counted by however far the sim ran behind real time -- measured at
+// 6.7% of spurious rotation in room_concept's odometry prior (commit 5968a65). Pre-scaling the rate
+// by sim_wall_rate_ made the two agree.
+//
+// It is off now because FullPoseEuler and the IMU structs carry `simTimestamp`, so the mismatch it
+// patched no longer exists: a consumer integrates the true rate over the clock that rate is measured
+// in. Three reasons that is better than the scaling:
+//   - It makes simulation and hardware SYMMETRIC. On the real robot sim time IS wall time, so raw
+//     velocity against its own stamp is correct in both cases and the consumer needs no special case.
+//   - The published number becomes a physical fact -- the robot's actual speed in its own world --
+//     rather than one that only means anything paired with a wall stamp.
+//   - It takes sim_wall_rate_ out of the velocity path, and with it the variance documented below:
+//     the estimator's earlier 2 s window swapped a constant 6.5% bias for a +-6% time-varying one and
+//     measurably cost the localizer's prediction early-exit. A jittering scale factor is a poor thing
+//     to have inside anything that integrates.
+//
+// sim_wall_rate_ is still computed and still used, but only for the acquisition-time arithmetic in
+// acquisition_wall_ms(), where converting an age in sim-ms to an age in wall-ms genuinely needs it.
+//
+// TURNING THIS BACK ON (=1) restores the old contract for a consumer that integrates on `timestamp`
+// and cannot be updated. Do not run mixed: with it off, integrating on the wall stamp over-counts by
+// 1/sim_wall_rate_ (~6% here), which is exactly the bug 5968a65 fixed.
 #ifndef BRIDGE_WALL_TIME_VELOCITIES          // -DBRIDGE_WALL_TIME_VELOCITIES=n overrides
-#define BRIDGE_WALL_TIME_VELOCITIES 1
+#define BRIDGE_WALL_TIME_VELOCITIES 0
 #endif
 
 // Set to 1 to emit yawrate_diag.csv (sim_t, wall_ms, yaw_raw, wz, vx_world, vy_world) from
@@ -436,6 +455,31 @@ private:
     // plausible real-robot figures and let the real IMU and base controller overwrite them once
     // calibrated. (room_config.h already records sigma_v = 3.9e-7 m/sqrt(s) over 24434 parked frames,
     // five orders below what the consumer's motion prior is configured with.)
+    // ── Synthetic sensor error (SIMULATION FIDELITY, not a test hook) ────────────────────────────
+    // This bridge publishes the supervisor's GROUND TRUTH. Measured in room_concept over 24434 parked
+    // frames, the resulting odometry has sigma_v = 3.9e-7 m/sqrt(s) — five to six orders below what
+    // every consumer's motion model is configured for. So the motion prior does no work in simulation,
+    // and anything tuned against it is tuned against a robot that does not exist.
+    //
+    // ★ THE WHEELS AND THE GYRO GET SEPARATE ERROR MODELS, AND THAT IS THE POINT. The reason a gyro
+    // heading path exists at all is that a gyro does NOT share the wheels' rotation error: a
+    // differential base over-reports rotation because it turns by SCRUBBING (the measured wheel/gyro
+    // ratio on this robot is ~1.05-1.08). Applying one error to both channels would simulate a gyro
+    // that scrubs, make the gyro look useless, and argue against a feature that is genuinely valuable
+    // on hardware. So: wheels carry a SCALE plus encoder noise; the gyro carries its own small noise
+    // and a slow BIAS, and no scale at all.
+    //
+    // sigma_* are DENSITIES (m/sqrt(s), rad/sqrt(s)): the rate is perturbed by sigma/sqrt(dt) so the
+    // accumulated increment has variance sigma^2*dt. That is what makes one constant mean the same
+    // thing on the 10 Hz wheel channel and the 125 Hz IMU channel.
+    // ⚠ All zero (the default) is inert and the bridge publishes ground truth exactly as before.
+    bool   sensor_noise_enabled_   = false;
+    double wheel_sigma_v_          = 0.0;   // m/sqrt(s)   — encoder velocity noise density
+    double wheel_sigma_w_          = 0.0;   // rad/sqrt(s) — wheel-derived yaw-rate noise density
+    double wheel_scale_v_          = 0.0;   // fraction: reported = true*(1+s), constant for the run
+    double wheel_scale_w_          = 0.0;   // fraction — the scrubbing error, ~+0.06 on this base
+    double gyro_sigma_             = 0.0;   // rad/sqrt(s) — gyro noise density, INDEPENDENT of the wheels
+    double gyro_bias_              = 0.0;   // rad/s       — constant gyro offset, the error a gyro DOES have
     double nominal_gyro_var_ = 1e-5;        // (rad/s)^2
     double nominal_acc_var_  = 1e-3;        // (m/s^2)^2
     double nominal_vel_var_  = 1e-4;        // (m/s)^2
@@ -553,6 +597,11 @@ private:
     // from Period.Compute so the control/actuation loop can step fast without
     // reprocessing point clouds and images at the same rate.
     int sensor_period = 0;
+    // The STEP period, kept because the IMU samples every step while `sensor_period` is the (possibly
+    // slower) heavy-sensor rate. Used to turn a gyro noise DENSITY into a per-sample perturbation:
+    // getting that interval wrong would make the same sigma mean different drift on different
+    // channels, which is exactly the rate-dependence the density form exists to remove.
+    int imu_step_period_ms_ = 0;
     double next_sensor_sample_ms = 0.0;   // next simulation time a sample is due
 
     struct PARAMS
