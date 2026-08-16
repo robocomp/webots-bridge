@@ -34,8 +34,8 @@
 
 
 #include <Camera360RGB.h>
-#include <DoorControl.h>
 #include <CameraRGBDSimple.h>
+#include <DoorControl.h>
 #include <FullPoseEstimation.h>
 #include <FullPoseEstimationPub.h>
 #include <GenericBase.h>
@@ -80,6 +80,11 @@ public:
 	virtual RoboCompCameraRGBDSimple::TImage CameraRGBDSimple_getImage(std::string camera) = 0;
 	virtual RoboCompCameraRGBDSimple::TPoints CameraRGBDSimple_getPoints(std::string camera) = 0;
 
+	virtual void DoorControl_cancelRequest(int requestId) = 0;
+	virtual RoboCompDoorControl::Capabilities DoorControl_getCapabilities() = 0;
+	virtual RoboCompDoorControl::RequestStatus DoorControl_getRequestStatus(int requestId) = 0;
+	virtual RoboCompDoorControl::RequestAck DoorControl_requestDoor(RoboCompDoorControl::DoorRequest req) = 0;
+
 	virtual RoboCompIMU::Acceleration IMU_getAcceleration() = 0;
 	virtual RoboCompIMU::Gyroscope IMU_getAngularVel() = 0;
 	virtual RoboCompIMU::DataImu IMU_getDataImu() = 0;
@@ -109,11 +114,6 @@ public:
 
 	virtual RoboCompVisualElements::TObjects VisualElements_getVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
 	virtual void VisualElements_setVisualObjects(RoboCompVisualElements::TObjects objects) = 0;
-
-	virtual RoboCompDoorControl::Capabilities DoorControl_getCapabilities() = 0;
-	virtual RoboCompDoorControl::RequestAck DoorControl_requestDoor(RoboCompDoorControl::DoorRequest req) = 0;
-	virtual RoboCompDoorControl::RequestStatus DoorControl_getRequestStatus(int requestId) = 0;
-	virtual void DoorControl_cancelRequest(int requestId) = 0;
 
 	virtual RoboCompWebots2Robocomp::ObjectPose Webots2Robocomp_getObjectPose(std::string DEF) = 0;
 	virtual void Webots2Robocomp_resetWebots() = 0;

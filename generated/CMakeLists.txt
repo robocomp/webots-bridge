@@ -53,8 +53,8 @@ SET (SOURCES
 
 #ROBOCOMP
 ROBOCOMP_INITIALIZE( $ENV{ROBOCOMP}/ )
-ROBOCOMP_IDSL_TO_ICE(DoorControl Gridder OmniRobot Webots2Robocomp CameraRGBDSimple JoystickAdapter Person Camera360RGB VisualElements FullPoseEstimation FullPoseEstimationPub IMU Laser GenericBase Lidar3D KinovaArm)
-ROBOCOMP_ICE_TO_SRC(DoorControl Gridder OmniRobot Webots2Robocomp CameraRGBDSimple JoystickAdapter Person Camera360RGB VisualElements FullPoseEstimation FullPoseEstimationPub IMU Laser GenericBase Lidar3D KinovaArm)
+ROBOCOMP_IDSL_TO_ICE(Webots2Robocomp CameraRGBDSimple DoorControl FullPoseEstimation Gridder OmniRobot Person VisualElements Lidar3D FullPoseEstimationPub Camera360RGB Laser GenericBase IMU KinovaArm JoystickAdapter)
+ROBOCOMP_ICE_TO_SRC(Webots2Robocomp CameraRGBDSimple DoorControl FullPoseEstimation Gridder OmniRobot Person VisualElements Lidar3D FullPoseEstimationPub Camera360RGB Laser GenericBase IMU KinovaArm JoystickAdapter)
 SET (EXECUTABLE_OUTPUT_PATH ${RC_COMPONENT_DEVEL_PATH}/bin)
 
 # Specify construction and link process
