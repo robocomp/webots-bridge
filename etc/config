@@ -99,7 +99,27 @@ SensorNoise.Enabled     = true
 SensorNoise.WheelSigmaV = 0.006   # m/sqrt(s)   encoder velocity noise: ~19 mm/s of jitter at 10 Hz
 SensorNoise.WheelSigmaW = 0.010   # rad/sqrt(s) wheel-derived yaw-rate noise
 SensorNoise.WheelScaleV = 0.0     # no odometer scale error assumed; raise if the real base shows one
-SensorNoise.WheelScaleW = 0.06    # THE SCRUBBING ERROR — the measured wheel/gyro ratio is 1.05-1.08
+# ★ ZEROED 2026-08-17 after a CLOSURE TEST, and the reason is the opposite of what it first looked
+# like. A 4-turn pivot (4.0479 turns by the posterior, net travel 0.040 m, closing to within 17 deg
+# on 1440 -- the test resolves to ~1.2%) integrated as:
+#     truth 25.1327 rad | gyro 25.4197 (1.0114) | wheel 30.9178 (1.2302)
+# The gyro is accurate to within the test's own resolution. The wheel over-reports 23%, and with the
+# +0.06 injected here backed out its INTRINSIC error is 1.16.
+#
+# ⚠ THAT IS NOT A CALIBRATION BUG. Checked against ShadowDiff.proto -- the robot piso.wbt actually
+# loads, not Shadow.proto -- the drive-wheel anchors are at x = +-0.259 and the wheel radius is 0.1,
+# which match half_track_ = 0.259 and wheel_radius_ = 0.100 exactly. The constants are right.
+#
+# It is SCRUBBING, and its size tracks how much of the motion is rotation, exactly as it should:
+#     mixed tour   wheel/gyro 1.1427 measured  ->  intrinsic 1.078   (the 1.05-1.08 the code expects)
+#     pure pivot   wheel/gyro 1.2302           ->  intrinsic 1.16    (all rotation, the worst case)
+# So the simulator ALREADY reproduces the scrubbing this knob was added to model, and setting it
+# non-zero duplicates a real effect the physics is generating on its own.
+#
+# Leave at 0. If a future world's base does NOT scrub (an idealised wheel contact, say), a value here
+# would then be modelling something absent rather than doubling something present -- so check the
+# wheel/gyro ratio on a pivot before re-introducing it.
+SensorNoise.WheelScaleW = 0.0
 SensorNoise.GyroSigma   = 0.002   # rad/sqrt(s) — 3x quieter than the wheels, and with NO scale
 SensorNoise.GyroBias    = 0.0     # a real gyro drifts; left at 0 until there is a figure to use
 
