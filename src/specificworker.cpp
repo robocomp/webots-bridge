@@ -1047,7 +1047,7 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
     // ── Beam geometry comes from the DEVICE. Nothing is hardcoded here. ──────────────────
     // Was: `if(name == "helios") verticalFov = 2.8;` — see lidar_tilt_angle() above for what
     // that override cost. verticalFov is already _lidar->getVerticalFov().
-    const double tiltAngle = lidar_tilt_angle(robot, _lidar, name);
+    [[maybe_unused]] const double tiltAngle = lidar_tilt_angle(robot, _lidar, name);
 
     newLidar3dData.points.reserve(static_cast<size_t>(horizontalResolution) * static_cast<size_t>(verticalResolution));
     newLaserData.reserve(static_cast<size_t>(horizontalResolution) * static_cast<size_t>(verticalResolution));
@@ -1074,30 +1074,44 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
     //     the same class of error as the one this commit removes, so it goes too.)
     //   * "the depth values are ordered from left to right and from the TOP to the BOTTOM layer"
     //     => j = 0 is the TOP beam.
-    // `tiltAngle` rotates the whole fan; negative tilts it DOWN (measured on P3Bot: -0.34 rad
-    // puts the H32F70's fan centre at -19.5 deg, matching the unit's -20).
-    // theta convention in this function: M_PI is the horizon and LARGER than M_PI is DOWN, so
-    // the down-positive elevation of layer j is (-tilt + vfov/2 - j*step).
+    // theta convention in this function: M_PI is the horizon and LARGER than M_PI is DOWN.
     //
-    // ★★★ROW 0 IS THE BOTTOM OF THE FAN, AND THAT IS MEASURED, NOT READ. The Lidar reference says
-    // the depth values run "from the top to the bottom layer", so this was first written the other
-    // way round — and the published cloud then put 27% of its points OUTSIDE the room's 0..3 m
-    // slab, with no ceiling plane anywhere. Re-mapping the SAME recorded frame (26220 points) row
-    // 0 -> bottom drops that to 10.8%, puts 0% below the floor, and makes a 674-point plane appear
-    // at body z = 2.93 m -- the apartment's 3.00 m ceiling. That is the whole argument; the doc's
-    // wording loses to the ceiling.
-    // ⚠This is INVISIBLE on a symmetric fan, which is why it survived so long: reversing the order
-    // of a fan that is symmetric about its own horizon maps the kept half onto the mirror half,
-    // and for the bpearl (+-90 deg, no tilt) the resulting dome is identical either way. The helios
-    // is the first ASYMMETRIC fan this bridge has ever reconstructed, so it is the first sensor
-    // that could detect the error at all.
+    // ★★★WEBOTS DOES NOT TILT THE BEAMS. `tiltAngle` is read and logged (below) but deliberately
+    // NOT applied: the fan is symmetric about the device's own horizon, +vfov/2 .. -vfov/2.
+    // MEASURED, not assumed — one recorded helios frame (26220 points, apartment world), each
+    // candidate reconstruction scored against the room the robot is standing in:
+    //
+    //   reconstruction              inside the 0..3 m room   densest plane       wall CV
+    //   no tilt (symmetric)                 100.0%           z=-0.02 m, 4474     0.062
+    //   pitch, tilt -0.34                    72.8%           z=+1.08 m, 1092     0.210
+    //   roll about x, +-0.34                 76-78%          z=+1.08 m           0.113-0.129
+    //   roll about y, +-0.34                 74-78%          z=+1.08 m           0.142-0.157
+    //
+    // Only the untilted fan puts EVERY point inside the room, finds the floor exactly at z = 0
+    // (4474 points), and leaves the walls vertical. The proto says `tiltAngle -0.34`; the data
+    // says the beams do not know about it.
+    // ⚠CONSEQUENCE FOR THE MODEL, not just for this function: the simulated helios is a SYMMETRIC
+    // +-35 deg fan, so the H32F70's real -55..+15 asymmetry is NOT simulated. Inverting the mount
+    // therefore buys 35 deg of up-look, not 54.5. If the asymmetry is wanted it must be baked into
+    // the Lidar NODE's rotation, which Webots does honour (the 180 deg flip is visible in the
+    // data), not into a field it ignores.
+    //
+    // ★ROW 0 IS THE TOP LAYER, as the Lidar reference states. This was briefly reversed on the
+    // strength of an offline re-mapping of one helios frame (it moved more points inside the
+    // room's 0..3 m slab and made a plane appear at the ceiling height). The BPEARL refuted it
+    // outright: reversing dropped its cloud from 18463 to 2384 points, because the theta < M_PI
+    // half-space cut then keeps the physically UP-pointing half of its dome, which mostly returns
+    // nothing. A symmetric fan is not invariant to the reversal after all — the two halves are
+    // mirror images geometrically but NOT in what they hit. The bpearl is the better instrument
+    // here: its floor sits at device z = +0.70 m against a 0.67 m mount, which pins the ordering
+    // directly. Reverted; the remaining helios discrepancy is being chased elsewhere.
     std::vector<float> v_angle(verticalResolution);
     std::vector<float> v_cos(verticalResolution);
     std::vector<float> v_sin(verticalResolution);
     const double v_step = (verticalResolution > 1) ? verticalFov / (verticalResolution - 1) : 0.0;
     for (int j = 0; j < verticalResolution; ++j)
     {
-        const double elev_down = -tiltAngle + verticalFov / 2.0 - j * v_step;
+        const double elev_down = -verticalFov / 2.0 + j * v_step;   // NO tilt term — measured, above
         float verticalAngle = static_cast<float>(M_PI + elev_down);
         v_angle[j] = verticalAngle;
         v_cos[j] = std::cos(verticalAngle);
@@ -1111,7 +1125,7 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
         std::cout << "[Lidar] " << name << ": layers=" << verticalResolution
                   << " vfov=" << verticalFov * 180.0 / M_PI << " deg"
                   << " step=" << v_step * 180.0 / M_PI << " deg"
-                  << " tilt=" << tiltAngle * 180.0 / M_PI << " deg"
+                  << " tilt=" << tiltAngle * 180.0 / M_PI << " deg (declared, NOT applied)"
                   << " -> device-frame elevation span [" << (-(v_angle[verticalResolution-1] - M_PI)) * 180.0 / M_PI
                   << " .. " << (-(v_angle[0] - M_PI)) * 180.0 / M_PI << "] deg (+ = up)" << std::endl;
 
