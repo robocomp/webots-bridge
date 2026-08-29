@@ -1,3 +1,12 @@
+# ── WHAT THE REAL BASE WILL AND WILL NOT DO ───────────────────────────────────────────────────
+# The base component's OWN config, i.e. the same file the real robot runs. Supplies maxLinSpeed,
+# maxRotSpeed, maxAcceleration, maxDeceleration, wheelRadius and axesLength; the bridge clips the
+# twist as SVD48VBase/src/specificworker.py:161-173 does and ramps the wheels where SVD48V.py's
+# driver ramp sits. Omnidirectional to match this file's (default) mecanum Base.Kinematics.
+# ★Without it the simulated P3Bot drives 3.4x faster, turns 6.7x faster and accelerates in one
+#  step where the real base needs 2.0 s to reach 0.7 m/s.
+Base.ConfigFile = "/home/pbustos/robocomp/components/robocomp-robolab/components/hardware/base/SVD48VBase/etc/config_omnidirectional.toml"
+
 [Proxies]
 # This property is used by the clients to connect to IceStorm.
 TopicManager = "IceStorm/TopicManager:default -p 9999"

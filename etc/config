@@ -49,6 +49,19 @@ Period.Sensors = 32
 # Base.WheelRadius / Base.HalfTrack override the defaults if a world's robot differs.
 Base.Kinematics = "differential"
 
+# ── WHAT THE REAL BASE WILL AND WILL NOT DO ───────────────────────────────────────────────────
+# The base component's OWN config, i.e. the same file the real robot runs. It supplies maxLinSpeed,
+# maxRotSpeed, maxAcceleration, maxDeceleration, wheelRadius and axesLength, and the bridge then
+# enforces them the way the real stack does: the twist is clipped exactly as
+# SVD48VBase/src/specificworker.py:161-173 clips it, and the wheels are ramped exactly where
+# SVD48V.py:129-130 puts the driver's ramp.
+# ★Without this key the simulated base is bound by NOTHING: measured, it would drive 3.3x faster,
+#  turn 5.8x faster and accelerate instantaneously where the real robot needs 1.8 s to reach
+#  0.9 m/s. Every dynamics number measured in sim inherits that gap.
+# ★It must match Base.Kinematics — differential here, so config_diferential. The bridge
+#  cross-checks the file's `baseType` against it and says so if the two disagree.
+Base.ConfigFile = "/home/pbustos/robocomp/components/robocomp-robolab/components/hardware/base/SVD48VBase/etc/config_diferential.toml"
+
 # Source of the VELOCITY fields published on FullPoseEstimationPub. The pose fields are supervisor
 # ground truth either way, and OmniRobot is unaffected by this setting.
 #   "wheels"     - wheel-encoder forward kinematics: the exact inverse of the mecanum IK in

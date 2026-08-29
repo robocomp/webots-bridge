@@ -18,6 +18,11 @@
  */
 #include "specificworker.h"
 #include <webots/Field.hpp>   // tiltAngle read off the scene tree
+#include <charconv>          // the base config is parsed locale-independently -- see read_flat_config
+#include <fstream>
+#include <limits>
+#include <map>
+#include <optional>
 #include <set>
 
 #pragma region Robocomp Methods
@@ -115,7 +120,22 @@ void SpecificWorker::initialize()
             wheel_radius_ = 0.100;   // SVD48VBase/etc/config_diferential: wheelRadius = 100 mm
             half_track_   = 0.259;   //                                    axesLength  = 518 mm, /2
         }
-        // ...overridable, because a future world may differ from the one robot these came from.
+        // ★THE BASE COMPONENT OWNS ITS OWN KINEMATICS AND LIMITS. Read them from ITS config -- the same
+        // file the real robot runs -- rather than keeping a copy here. This supersedes the constants
+        // just above (which stay as the fallback for a world with no real counterpart) and is what
+        // makes the simulated base obey the same envelope as the hardware. See specificworker.h for
+        // the measured gap this closes; without it the sim base is bound by nothing at all.
+        std::string base_config_path;
+        try { base_config_path = configLoader.get<std::string>("Base.ConfigFile"); } catch(...) {}
+        if (base_config_path.empty())
+            std::cout << "[base] Base.ConfigFile is not set: the simulated base keeps NO speed or "
+                         "acceleration limit, which is a known sim2real gap (specificworker.h)."
+                      << std::endl;
+        else
+            load_base_limits(base_config_path);
+
+        // ...still overridable, because a future world may differ from the one robot these came from.
+        // Last word on purpose: an explicit key in this bridge's own config beats the file.
         try { wheel_radius_ = configLoader.get<double>("Base.WheelRadius"); } catch(...) {}
         try { half_track_   = configLoader.get<double>("Base.HalfTrack"); } catch(...) {}
 
@@ -1507,16 +1527,166 @@ void SpecificWorker::OmniRobot_stopBase()
     speed_command_pending = true;
 }
 
+// ── THE BASE COMPONENT'S OWN CONFIG ───────────────────────────────────────────────────────────────
+// One owner for what the hardware can do. These numbers already existed in FOUR places (this bridge's
+// hard-coded wheel_radius_/half_track_, the controller's MaxAdvSpeed/MaxRotSpeed, room_concept's pose
+// clamp, and robot_concept's config), and the copies had already drifted apart. The file read here is
+// the SAME one the real robot runs, so sim and hardware cannot disagree by construction.
+//
+// Format is flat `key=value` with optional quotes and a trailing `#comment` (no space required).
+// Values are mm and mm/s; converted to SI on the way in.
+//
+// ★ std::from_chars, NOT stod/strtod. This is a Qt program, Qt calls setlocale(LC_ALL,"") at startup,
+// and these machines run LANG=es_ES.UTF-8 where the decimal separator is a COMMA. `maxRotSpeed=1.5`
+// parses as **1** through the C library -- a third of the real limit, silently, with no error flag.
+// A standalone harness stays in "C" and the bug simply is not there to find. See CLAUDE.md.
+// (Deliberately a small local copy rather than a link to active_inference/common: a Webots bridge
+// should not acquire a dependency on the agent tree. The original is robot_concept's reader.)
+namespace
+{
+std::map<std::string, std::string> read_flat_config(const std::string &path)
+{
+    std::map<std::string, std::string> kv;
+    std::ifstream f(path);
+    if (not f) return kv;
+    std::string line;
+    while (std::getline(f, line))
+    {
+        const auto eq = line.find('=');
+        if (eq == std::string::npos or line.find_first_not_of(" \t") == std::string::npos) continue;
+        if (line[line.find_first_not_of(" \t")] == '#') continue;
+        std::string key = line.substr(0, eq);
+        std::string val = line.substr(eq + 1);
+        const auto trim = [](std::string &v)
+        {
+            const auto a = v.find_first_not_of(" \t\r\n");
+            const auto b = v.find_last_not_of(" \t\r\n");
+            v = (a == std::string::npos) ? std::string{} : v.substr(a, b - a + 1);
+        };
+        trim(key);
+        trim(val);
+        if (not val.empty() and val.front() == '"')
+        {
+            const auto close = val.find('"', 1);
+            val = (close == std::string::npos) ? val.substr(1) : val.substr(1, close - 1);
+        }
+        else if (const auto h = val.find('#'); h != std::string::npos)
+        {
+            val = val.substr(0, h);
+            trim(val);
+        }
+        if (not key.empty()) kv.emplace(std::move(key), std::move(val));
+    }
+    return kv;
+}
+
+std::optional<double> cfg_num(const std::map<std::string, std::string> &kv, const char *key)
+{
+    const auto it = kv.find(key);
+    if (it == kv.end()) return std::nullopt;
+    const char *b = it->second.data();
+    double out{};
+    if (const auto [ptr, ec] = std::from_chars(b, b + it->second.size(), out); ec == std::errc{})
+        return out;
+    return std::nullopt;
+}
+}   // namespace
+
+bool SpecificWorker::load_base_limits(const std::string &path)
+{
+    const auto kv = read_flat_config(path);
+    if (kv.empty())
+    {
+        std::cout << "[base] could not read '" << path << "' -- the sim base stays UNLIMITED, which "
+                  << "is the old behaviour and a known sim2real gap (see specificworker.h)."
+                  << std::endl;
+        return false;
+    }
+
+    // mm and mm/s in that file; SI here. An absent key leaves its limit at 0 = disabled, never at a
+    // guessed default: "the base did not say" and "the base cannot move" are different statements.
+    if (const auto v = cfg_num(kv, "maxLinSpeed"))     max_lin_speed_mps_ = *v / 1000.0;
+    if (const auto v = cfg_num(kv, "maxRotSpeed"))     max_rot_speed_rps_ = *v;          // already rad/s
+    if (const auto v = cfg_num(kv, "maxAcceleration")) max_accel_mps2_    = *v / 1000.0;
+    if (const auto v = cfg_num(kv, "maxDeceleration")) max_decel_mps2_    = *v / 1000.0;
+    if (const auto v = cfg_num(kv, "wheelRadius"))     wheel_radius_      = *v / 1000.0;
+    if (const auto v = cfg_num(kv, "axesLength"))      half_track_        = *v / 2000.0;  // mm, /2 -> m
+
+    // ★CROSS-CHECK, DO NOT OVERRIDE. `baseType` says what the REAL base is; Base.Kinematics says which
+    // running gear the loaded WORLD gave the robot. They are different facts and both are legitimate,
+    // but if they disagree the sim is modelling a machine that is not the one being simulated -- say
+    // so rather than silently picking one.
+    if (const auto it = kv.find("baseType"); it != kv.end())
+    {
+        const bool real_is_omni = (it->second == "Omnidirectional");
+        const bool sim_is_omni  = (base_kinematics_ == BaseKinematics::Mecanum);
+        if (real_is_omni != sim_is_omni)
+            std::cout << "[base] ⚠ MISMATCH: the real base is '" << it->second << "' but this world's "
+                      << "robot is " << (sim_is_omni ? "mecanum (4 wheels)" : "differential (2 wheels)")
+                      << ". Base.Kinematics and " << path << " disagree about the machine."
+                      << std::endl;
+    }
+
+    std::printf("[base] limits from %s: v_max=%.3f m/s  w_max=%.3f rad/s  accel=%.3f  decel=%.3f m/s^2 "
+                "| R=%.4f m  half_track=%.4f m\n",
+                path.c_str(), max_lin_speed_mps_, max_rot_speed_rps_, max_accel_mps2_, max_decel_mps2_,
+                wheel_radius_, half_track_);
+    if (max_accel_mps2_ > 0.0 and max_lin_speed_mps_ > 0.0)
+        std::printf("[base] ⇒ 0 to v_max takes %.2f s. The sim used to do it in one step.\n",
+                    max_lin_speed_mps_ / max_accel_mps2_);
+    return true;
+}
+
+// Exactly what SVD48VBase/src/specificworker.py:161-173 does: each axis clipped independently against
+// its own limit (NOT the norm of the translation -- the real component clips advx and advz separately,
+// and mirroring it is the point). It also prints on every violation; at 125 Hz that would be a flood,
+// so this says the same thing at most once a second.
+void SpecificWorker::clamp_twist_to_base_limits(float &advx_mm_s, float &advz_mm_s, float &rot_rad_s)
+{
+    bool hit = false;
+    const auto clip = [&hit](float &v, double lim)
+    {
+        if (lim <= 0.0) return;                       // not configured -> not a limit
+        if (std::fabs(v) > lim) { hit = true; v = static_cast<float>(std::clamp<double>(v, -lim, lim)); }
+    };
+    // ⚠ The linear axes arrive in mm/s (setSpeedBase's wire units); the limits are SI.
+    clip(advx_mm_s, max_lin_speed_mps_ * 1000.0);
+    clip(advz_mm_s, max_lin_speed_mps_ * 1000.0);
+    clip(rot_rad_s, max_rot_speed_rps_);
+
+    if (not hit) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_clamp_warn_ < std::chrono::seconds(1)) return;
+    last_clamp_warn_ = now;
+    std::printf("[base] AVISO SUPERADA LA VELOCIDAD MAXIMA -- command clipped to the real base's "
+                "limits (v_max=%.3f m/s, w_max=%.3f rad/s). The hardware would have done the same.\n",
+                max_lin_speed_mps_, max_rot_speed_rps_);
+}
+
 // Runs in the compute() thread, just before robot->step().
 void SpecificWorker::apply_pending_speed_command()
 {
+    // ★RUNS EVERY STEP, not only when a new command arrives. The ramp below is a piece of the
+    // DRIVER, and a driver keeps ramping toward its standing target between commands -- returning
+    // early on "nothing new" would make acceleration depend on how often the caller happens to talk.
+    // The standing target is simply the last command received.
     SpeedCommand cmd;
     {
         const std::lock_guard<std::mutex> lock(speed_command_mutex);
-        if (not speed_command_pending) return;
+        if (speed_command_pending) { speed_command_seen_ = true; speed_command_pending = false; }
         cmd = speed_command;
-        speed_command_pending = false;
     }
+    // Before the first command the motors are left exactly as initialize() set them (velocity 0,
+    // position INFINITY). Preserves the old behaviour rather than asserting a zero of our own.
+    if (not speed_command_seen_) return;
+
+    // ★THE CLAMP GOES HERE, ON THE TWIST, BEFORE THE IK -- which is where the real one is. SVD48VBase
+    // clips the twist and only then computes wheel speeds; clipping the wheels instead would distort
+    // the commanded DIRECTION (one wheel clipped, the others not, is a different motion, not a slower
+    // one). Note this binds every caller, including python_xbox_controller, which talks to this
+    // interface in sim exactly as it talks to SVD48VBase on the robot -- and which was the source of
+    // the 4.30 rad/s ground-truth peak that no real base could have produced.
+    clamp_twist_to_base_limits(cmd.advx, cmd.advz, cmd.rot);
 
     const double advx     = cmd.advx * 0.001;   // mm/s -> m/s
     const double advz_cmd = cmd.advz * 0.001;
@@ -1565,9 +1735,35 @@ void SpecificWorker::apply_pending_speed_command()
         speeds[3] = (advz - advx - c * cmd.rot) / wheel_radius_;
     }
 
+    // ── THE DRIVER'S RAMP ─────────────────────────────────────────────────────────────────────────
+    // `speeds[]` is the TARGET the IK asked for. The real wheel driver does not jump to it: SVD48V.py
+    // pushes maxAcceleration/maxDeceleration into the motor controller (SVD48V.py:129-130), which then
+    // ramps the rim speed. This is that ramp, in the same place -- on the wheels, below the twist.
+    //
+    // ★ASYMMETRIC, which is the whole reason it is here and not in the proto's `acceleration` field:
+    // the real base accelerates at 0.35-0.50 m/s^2 and brakes at 1.00. Webots' motor carries ONE
+    // symmetric number and cannot express that.
+    //
+    // The limits are on RIM speed in m/s^2; a wheel's angular limit is that over its radius.
+    // A sign reversal is treated as deceleration for the whole step: the transit crosses zero, so most
+    // of it is braking, and being conservative for one 32 ms step is not worth a two-segment solve.
+    const double dt = getPeriod("Compute") / 1000.0;
+    const double a_up   = (max_accel_mps2_ > 0.0 and wheel_radius_ > 0.0)
+                            ? max_accel_mps2_ / wheel_radius_ * dt : std::numeric_limits<double>::max();
+    const double a_down = (max_decel_mps2_ > 0.0 and wheel_radius_ > 0.0)
+                            ? max_decel_mps2_ / wheel_radius_ * dt : std::numeric_limits<double>::max();
+
     for (int i = 0; i < wheel_count_; i++)
-        if (motors[i] != nullptr)
-            motors[i]->setVelocity(speeds[i]);
+    {
+        if (motors[i] == nullptr) continue;
+        const double tgt = speeds[i];
+        const double cur = applied_wheel_speed_[i];
+        // Speeding up = same sign AND larger magnitude. Everything else (slowing, stopping, reversing)
+        // is braking.
+        const double step = (tgt * cur >= 0.0 and std::fabs(tgt) > std::fabs(cur)) ? a_up : a_down;
+        applied_wheel_speed_[i] = std::clamp(tgt, cur - step, cur + step);
+        motors[i]->setVelocity(applied_wheel_speed_[i]);
+    }
 }
 
 #pragma endregion OmniRobot

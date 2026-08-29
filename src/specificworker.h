@@ -424,6 +424,67 @@ private:
     double half_track_   = LX + LY;      // the c above
     bool   warned_advx_ignored_ = false; // a differential base cannot strafe; say so once, not per call
 
+    // ── WHAT THE REAL BASE WILL AND WILL NOT DO ───────────────────────────────────────────────────
+    // ★★★THE SIM2REAL GAP THIS CLOSES. Until 2026-08-29 this bridge converted the commanded twist
+    // straight to wheel velocities and called setVelocity() with NO limit of any kind, and the motors
+    // declare only `maxVelocity 30` (Webots default `acceleration -1` = INFINITE). Measured against
+    // what the hardware can actually do:
+    //
+    //                    sim ceiling      real       ratio
+    //     P3Bot speed    2.40 m/s         0.70       3.4x
+    //     P3Bot rot     10.11 rad/s       1.50       6.7x
+    //     Shadow speed   3.00 m/s         0.90       3.3x
+    //     Shadow rot    11.58 rad/s       2.00       5.8x
+    //     accel          instantaneous    0.35/0.50  --
+    //
+    // The sim reached any commanded speed in ONE 32 ms step where the real P3Bot needs 2.0 s to reach
+    // 0.7 m/s. This is not hypothetical: the ground-truth yaw peak of 4.30 rad/s recorded on 08-29 is
+    // 2.9x P3Bot's real limit, and every ZUPT sigma, rotation prior and preintegration covariance
+    // measured against it was measured against a robot that cannot exist.
+    //
+    // ★WHERE EACH LIMIT LIVES, mirroring the real stack rather than inventing a limiter:
+    //     SVD48VBase/src/specificworker.py:161-173  clips advx,advz to +/-maxLinSpeed and rot to
+    //                                               +/-maxRotSpeed  -> clamp_twist_to_base_limits()
+    //     SVD48V.py:129-130  pushes maxAcceleration/maxDeceleration INTO THE WHEEL DRIVER, i.e. the
+    //                        ramp happens below the twist, on the wheels -> the ramp in
+    //                        apply_pending_speed_command(), immediately before setVelocity()
+    //
+    // ★THE MOTORS ARE DELIBERATELY LEFT UNRAMPED (`acceleration` unset, -1). Webots' RotationalMotor
+    // carries a single SYMMETRIC acceleration, but the real base is asymmetric (accel 0.35/0.50,
+    // decel 1.00 m/s^2), so the motor field cannot express it. The ramp is here instead, where the
+    // real driver's is. ⚠ DO NOT also add `acceleration` to the protos: the two would COMPOSE and the
+    // sim would then accelerate strictly slower than either the hardware or the number you set.
+    //
+    // ★`maxVelocity 30` IS CORRECT AND MUST NOT BE LOWERED to maxLinSpeed/wheelRadius. It is a
+    // PER-WHEEL bound while the real limits are per-AXIS of the twist, and a legal twist can demand
+    // more wheel speed than v_max/r: P3Bot at (advz 0.7, advx 0.7, rot 1.5) needs 21.95 rad/s.
+    // Worst legal demand is 21.95 (P3Bot) / 14.18 (Shadow), so once the twist is clamped 30 never
+    // binds. Capping it at 8.75 would silently distort every combined motion -- a NEW sim2real error
+    // introduced while closing one.
+    //
+    // SI throughout. 0 means "not configured" and disables that limit, which is exactly the old
+    // behaviour -- absent is never zero-the-limit (that would pin the robot to the floor).
+    double max_lin_speed_mps_ = 0.0;
+    double max_rot_speed_rps_ = 0.0;
+    double max_accel_mps2_    = 0.0;
+    double max_decel_mps2_    = 0.0;
+    // What the motors were last actually told, in rad/s. The ramp's state: it is the CURRENT wheel
+    // speed the driver is holding, not the commanded one, and the difference between the two is the
+    // whole point.
+    double applied_wheel_speed_[4]{};
+    bool   speed_command_seen_ = false;   // do not touch the motors before the first command arrives
+    std::chrono::steady_clock::time_point last_clamp_warn_{};
+
+    // Read maxLinSpeed / maxRotSpeed / maxAcceleration / maxDeceleration / wheelRadius / axesLength /
+    // baseType from the base component's OWN config -- the same file the real robot runs. Returns
+    // false and changes nothing if it cannot be read.
+    bool load_base_limits(const std::string &path);
+    // Mirrors SVD48VBase's own clamp, per-axis, in place. Reports at most once a second.
+    // ⚠UNITS ARE THE WIRE'S, NOT SI: setSpeedBase carries the linear axes in mm/s and rotation in
+    // rad/s, and this runs before that conversion so the clamp sits on the twist the caller sent.
+    // The limits themselves are SI; the mm factor is applied inside.
+    void clamp_twist_to_base_limits(float &advx_mm_s, float &advz_mm_s, float &rot_rad_s);
+
     struct WheelOdometry
     {
         double step_angle[4]{};             // rad, per-step anchor      (diagnostic only)
