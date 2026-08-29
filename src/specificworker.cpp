@@ -964,6 +964,36 @@ double SpecificWorker::generate_noise(double stddev)
 // kept the 13 layers that fell inside the window — 900 x 13 = 11700 points of scrambled geometry.
 // The rule this restores: the SIMULATOR's device is the generative model; this bridge reports it,
 // it does not redefine it.
+// The CHANNEL WINDOW: which of the layers Webots generates the real device actually has.
+//
+// Webots spreads numberOfLayers symmetrically about the device horizon and ignores tiltAngle
+// (measured — see receiving_lidarData). An RS-Helios H32F70 is NOT symmetric: its 32 channels
+// span -55..+15 deg. The only way to make those elevations EXIST in the simulator is to generate
+// a symmetric fan wide enough to contain them (110 deg = 2 x 55) and drop the layers the real
+// unit does not have. That is what this window is: a statement about the DEVICE's channel count,
+// applied to elevations that were reconstructed correctly — not the old software carve, which
+// cut a fabricated fan and so moved every point it kept.
+//
+// Absent config => no window => every layer is published. A sensor whose sim fan already matches
+// its channels (bpearl) needs no entry.
+struct ChannelWindow { double lo_deg = -1e9, hi_deg = 1e9; bool set = false; };
+
+static ChannelWindow lidar_channel_window(const ConfigLoader& cl, const std::string& name)
+{
+    static std::map<std::string, ChannelWindow> cache;
+    if (const auto it = cache.find(name); it != cache.end())
+        return it->second;
+    ChannelWindow w;
+    try { w.lo_deg = cl.get<double>("LidarChannels." + name + ".ElevMinDeg"); w.set = true; } catch(...) {}
+    try { w.hi_deg = cl.get<double>("LidarChannels." + name + ".ElevMaxDeg"); w.set = true; } catch(...) {}
+    if (w.set)
+        std::cout << "[Lidar] " << name << ": channel window [" << w.lo_deg << ", " << w.hi_deg
+                  << "] deg — layers outside it are channels the real device does not have"
+                  << std::endl;
+    cache[name] = w;
+    return w;
+}
+
 static double lidar_tilt_angle(webots::Supervisor* sup, webots::Lidar* dev, const std::string& name)
 {
     static std::map<std::string, double> cache;
@@ -1117,6 +1147,17 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
         v_cos[j] = std::cos(verticalAngle);
         v_sin[j] = std::sin(verticalAngle);
     }
+    // Which layers the real device actually carries (see lidar_channel_window).
+    const ChannelWindow win = lidar_channel_window(this->configLoader, name);
+    std::vector<char> layer_kept(verticalResolution, 1);
+    int kept_layers = 0;
+    for (int j = 0; j < verticalResolution; ++j)
+    {
+        const double elev_deg = -(v_angle[j] - M_PI) * 180.0 / M_PI;   // + is UP, device frame
+        layer_kept[j] = (elev_deg >= win.lo_deg and elev_deg <= win.hi_deg) ? 1 : 0;
+        kept_layers += layer_kept[j];
+    }
+
     // One line per device, once, so the reconstructed fan can be checked against the proto
     // without instrumenting anything. + is UP, and this is the DEVICE frame: an inverted sensor
     // still reports its own -54.5..+15.5, and the body<-lidar RT edge is what turns it over.
@@ -1127,7 +1168,8 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
                   << " step=" << v_step * 180.0 / M_PI << " deg"
                   << " tilt=" << tiltAngle * 180.0 / M_PI << " deg (declared, NOT applied)"
                   << " -> device-frame elevation span [" << (-(v_angle[verticalResolution-1] - M_PI)) * 180.0 / M_PI
-                  << " .. " << (-(v_angle[0] - M_PI)) * 180.0 / M_PI << "] deg (+ = up)" << std::endl;
+                  << " .. " << (-(v_angle[0] - M_PI)) * 180.0 / M_PI << "] deg (+ = up)"
+                  << "  channels kept " << kept_layers << "/" << verticalResolution << std::endl;
 
     // Iterate with horizontal angle outer loop to keep phi-sorted order.
     for (int i = 0; i < horizontalResolution; ++i)
@@ -1165,7 +1207,7 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
                     // business, and it is stated in ONE place now.
                     // bpearl keeps its half-space cut: theta < M_PI is the up half of its own
                     // (inverted) device frame, i.e. the downward dome in the world.
-                    if (name != "bpearl" or point.theta < M_PI)
+                    if (layer_kept[j] and (name != "bpearl" or point.theta < M_PI))
                     {
                         point.x = lidar_point.x();
                         point.y = lidar_point.y();

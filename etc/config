@@ -160,3 +160,21 @@ Ice.Warn.Connections = "0"
 Ice.Trace.Network = "0"
 Ice.Trace.Protocol = "0"
 Ice.MessageSizeMax = "20004800"
+
+# ---------------------------------------------------------------------------------------------
+# LIDAR CHANNEL WINDOW — which of the layers Webots generates the real device actually has.
+#
+# Webots spreads numberOfLayers SYMMETRICALLY about the device horizon and IGNORES tiltAngle
+# (measured 2026-08-29: only the untilted reconstruction puts 100% of a recorded frame inside the
+# room and the floor at z = 0). An RS-Helios H32F70 is not symmetric — its 32 channels span
+# -55..+15 deg — so Shadow.proto/ShadowDiff.proto generate a symmetric 110 deg fan (2 x 55) with
+# 50 layers, which CONTAINS every real channel elevation, and this window drops the 18 layers
+# above +15 that the unit does not have. 50 layers over 110 deg = 2.2449 deg/layer; the window
+# keeps layers 18..49 = 32 channels at +14.6 .. -55.0 deg.
+#
+# This is a statement about the DEVICE, not a tuning knob: it is applied to elevations that were
+# reconstructed correctly, so a dropped layer changes nothing about the layers that remain.
+# Delete both keys to publish every layer. Elevations are in the DEVICE frame, + is up — the
+# mount (inverted on Shadow) lives in the RT edge, not here.
+LidarChannels.helios.ElevMinDeg = -55.0
+LidarChannels.helios.ElevMaxDeg = 15.0
