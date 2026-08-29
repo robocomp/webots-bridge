@@ -1154,7 +1154,9 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
     for (int j = 0; j < verticalResolution; ++j)
     {
         const double elev_deg = -(v_angle[j] - M_PI) * 180.0 / M_PI;   // + is UP, device frame
-        layer_kept[j] = (elev_deg >= win.lo_deg and elev_deg <= win.hi_deg) ? 1 : 0;
+        // The 1e-6 slack is not cosmetic: with the window edge set to exactly the extreme channel
+        // (-55) the last layer lands on -55.0000001 and was silently dropped — 31 kept, not 32.
+        layer_kept[j] = (elev_deg >= win.lo_deg - 1e-6 and elev_deg <= win.hi_deg + 1e-6) ? 1 : 0;
         kept_layers += layer_kept[j];
     }
 
