@@ -1318,6 +1318,21 @@ void SpecificWorker::OmniRobot_setSpeedBase(float advx, float advz, float rot)
     // Only queue the command. Webots buffers actuator requests until the next
     // wb_robot_step() anyway, so applying it in compute() costs no extra actuation
     // latency and keeps this call at memory-copy speed.
+    // The other end of the same question: a command was accepted here, so if the robot still does
+    // not move the fault is downstream — the motors, or a robot whose Webots controller is not
+    // <extern> and therefore ignores actuator writes entirely.
+    {
+        static auto last = std::chrono::steady_clock::now() - std::chrono::hours(1);
+        static bool first = true;
+        const auto now = std::chrono::steady_clock::now();
+        if ((first or now - last > std::chrono::seconds(1))
+            and (advx != 0.f or advz != 0.f or rot != 0.f))
+        {
+            first = false; last = now;
+            std::cout << "[ setSpeedBase ] queued advx=" << advx << " advz=" << advz
+                      << " rot=" << rot << std::endl;
+        }
+    }
     const std::lock_guard<std::mutex> lock(speed_command_mutex);
     speed_command = {advx, advz, rot};
     speed_command_pending = true;
@@ -1697,6 +1712,28 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
             side = axis.value;
         else
             std::cout << "[ JoystickAdapter ] Warning: Using a non-defined axes (" << axis.name << ")." << std::endl;
+    }
+    // ★ SAY WHETHER COMMANDS ARRIVE. "The robot does not move" has at least four causes that look
+    //   identical from outside — the publisher never publishes, the axis NAMES do not match (the
+    //   loop above silently leaves all three at zero for an unknown name), do_joystick is off, or
+    //   the command arrives and the actuation does not follow. Nothing distinguished them, so this
+    //   says what was received. Throttled to 1 Hz, and always reports the FIRST one.
+    {
+        static auto last = std::chrono::steady_clock::now() - std::chrono::hours(1);
+        static bool first = true;
+        const auto now = std::chrono::steady_clock::now();
+        if (first or now - last > std::chrono::seconds(1))
+        {
+            first = false; last = now;
+            std::cout << "[ JoystickAdapter ] " << data.axes.size() << " axes -> side=" << side
+                      << " adv=" << adv << " rot=" << rot
+                      << (pars.do_joystick ? "" : "   <- do_joystick is FALSE, command DISCARDED")
+                      << ((side == 0.f and adv == 0.f and rot == 0.f)
+                              ? "   <- all zero: either the stick is centred, or no axis matched the"
+                                " names 'advance'/'side'/'rotate'"
+                              : "")
+                      << std::endl;
+        }
     }
     if(pars.do_joystick)
         OmniRobot_setSpeedBase(side, adv, rot);
