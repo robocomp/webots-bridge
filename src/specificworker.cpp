@@ -17,6 +17,8 @@
  *    along with RoboComp.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "specificworker.h"
+#include <webots/Field.hpp>   // tiltAngle read off the scene tree
+#include <set>
 
 #pragma region Robocomp Methods
 
@@ -947,6 +949,43 @@ double SpecificWorker::generate_noise(double stddev)
     return d(gen);
 }
 
+// Beam geometry that the controller API does NOT expose: `tiltAngle` has no getter on
+// webots::Lidar, so it is read straight off the scene tree. The Lidar lives INSIDE a PROTO
+// (ShadowDiff/Shadow), where getField() returns null — getBaseNodeField() is the accessor that
+// reaches a base node's own field through the PROTO wrapper. Cached per device: a Supervisor
+// getter blocks until the simulator answers, and this value cannot change while the world runs.
+//
+// WHY THIS EXISTS AT ALL. Until 2026-08-29 this function did not read the device's geometry, it
+// INVENTED it: `verticalFov` was overwritten with a hardcoded 2.8 rad for the helios, the layers
+// were spread over that fake span centred on the horizon, and a theta window then carved out an
+// H32F70-shaped fan in software. That worked only as long as nobody changed the proto. When the
+// helios became a real 32-layer / 70 deg / tilt -0.34 device, the same code stretched those 32
+// layers over 160 deg (5.01 deg per layer instead of 2.19), re-centred them on the horizon, and
+// kept the 13 layers that fell inside the window — 900 x 13 = 11700 points of scrambled geometry.
+// The rule this restores: the SIMULATOR's device is the generative model; this bridge reports it,
+// it does not redefine it.
+static double lidar_tilt_angle(webots::Supervisor* sup, webots::Lidar* dev, const std::string& name)
+{
+    static std::map<std::string, double> cache;
+    if (const auto it = cache.find(name); it != cache.end())
+        return it->second;
+
+    double tilt = 0.0;
+    const char* how = "absent -> 0";
+    if (sup != nullptr and dev != nullptr)
+        if (webots::Node* node = sup->getFromDevice(dev); node != nullptr)
+        {
+            webots::Field* f = node->getField("tiltAngle");
+            if (f != nullptr) how = "getField";
+            else { f = node->getBaseNodeField("tiltAngle"); if (f != nullptr) how = "getBaseNodeField"; }
+            if (f != nullptr) tilt = f->getSFFloat();
+        }
+    std::cout << "[Lidar] " << name << ": tiltAngle = " << tilt << " rad ("
+              << tilt * 180.0 / M_PI << " deg, " << how << ")" << std::endl;
+    cache[name] = tilt;
+    return tilt;
+}
+
 void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar, DoubleBuffer<RoboCompLidar3D::TData, RoboCompLidar3D::TData> &_lidar3dData, FixedSizeDeque<RoboCompLidar3D::TData>& delay_queue, long timestamp)
 {
     if (!_lidar) { std::cout << "No lidar available." << std::endl; return; }
@@ -990,8 +1029,10 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
 
     if(!rangeImage) { std::cout << "Lidar data empty." << std::endl; return; }
 
-    if(name == "helios")
-        verticalFov = 2.8;
+    // ── Beam geometry comes from the DEVICE. Nothing is hardcoded here. ──────────────────
+    // Was: `if(name == "helios") verticalFov = 2.8;` — see lidar_tilt_angle() above for what
+    // that override cost. verticalFov is already _lidar->getVerticalFov().
+    const double tiltAngle = lidar_tilt_angle(robot, _lidar, name);
 
     newLidar3dData.points.reserve(static_cast<size_t>(horizontalResolution) * static_cast<size_t>(verticalResolution));
     newLaserData.reserve(static_cast<size_t>(horizontalResolution) * static_cast<size_t>(verticalResolution));
@@ -1009,16 +1050,42 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
         h_sin[i] = std::sin(horizontalAngle);
     }
 
+    // Vertical angles, straight from the device's own geometry. Two Webots conventions decide
+    // this, and both are quoted from the Lidar reference rather than assumed:
+    //   * "the verticalFieldOfView field defines the vertical repartition of the layers (angle
+    //     between FIRST and LAST layer)" => the layers span N-1 gaps, not N. For the helios that
+    //     is 70/31 = 2.258 deg, which is exactly residual_concept's HeliosBeamSpacingRad 0.0394.
+    //     (Was verticalFov/N: a 1.6% elevation-scale error on the bpearl's 64 layers, and it is
+    //     the same class of error as the one this commit removes, so it goes too.)
+    //   * "the depth values are ordered from left to right and from the TOP to the BOTTOM layer"
+    //     => j = 0 is the TOP beam.
+    // `tiltAngle` rotates the whole fan; negative tilts it DOWN (measured on P3Bot: -0.34 rad
+    // puts the H32F70's fan centre at -19.5 deg, matching the unit's -20).
+    // theta convention in this function: M_PI is the horizon and LARGER than M_PI is DOWN, so
+    // the down-positive elevation of layer j is (-tilt - vfov/2 + j*step).
     std::vector<float> v_angle(verticalResolution);
     std::vector<float> v_cos(verticalResolution);
     std::vector<float> v_sin(verticalResolution);
+    const double v_step = (verticalResolution > 1) ? verticalFov / (verticalResolution - 1) : 0.0;
     for (int j = 0; j < verticalResolution; ++j)
     {
-        float verticalAngle = static_cast<float>(M_PI + j * (verticalFov / verticalResolution) - verticalFov / 2.0);
+        const double elev_down = -tiltAngle - verticalFov / 2.0 + j * v_step;
+        float verticalAngle = static_cast<float>(M_PI + elev_down);
         v_angle[j] = verticalAngle;
         v_cos[j] = std::cos(verticalAngle);
         v_sin[j] = std::sin(verticalAngle);
     }
+    // One line per device, once, so the reconstructed fan can be checked against the proto
+    // without instrumenting anything. + is UP, and this is the DEVICE frame: an inverted sensor
+    // still reports its own -54.5..+15.5, and the body<-lidar RT edge is what turns it over.
+    static std::set<std::string> announced;
+    if (announced.insert(name).second)
+        std::cout << "[Lidar] " << name << ": layers=" << verticalResolution
+                  << " vfov=" << verticalFov * 180.0 / M_PI << " deg"
+                  << " step=" << v_step * 180.0 / M_PI << " deg"
+                  << " tilt=" << tiltAngle * 180.0 / M_PI << " deg"
+                  << " -> device-frame elevation span [" << (-(v_angle[verticalResolution-1] - M_PI)) * 180.0 / M_PI
+                  << " .. " << (-(v_angle[0] - M_PI)) * 180.0 / M_PI << "] deg (+ = up)" << std::endl;
 
     // Iterate with horizontal angle outer loop to keep phi-sorted order.
     for (int i = 0; i < horizontalResolution; ++i)
@@ -1047,9 +1114,16 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
                 point.r = lidar_point.norm();  // distancia radial
                 if (point.r > 0.2)
                 {
-                    if ((name == "bpearl" and  point.theta < M_PI) or
-                        (name == "helios" and point.theta < 4.10152 and point.theta > 2.8799))//down limit+, uper limit-, horizon line is PI
-                        //(name == "helios" and point.theta > 3.4033 and point.theta < 2.1817 ))
+                    // The helios window is GONE. It carved an H32F70-shaped fan (15 deg up,
+                    // 55 deg down about the horizon) out of a sensor the proto declared as 180
+                    // deg — a hardware span emulated in software. The proto now declares the
+                    // real thing (32 layers, 70 deg, tiltAngle -0.34, mounted inverted), so
+                    // carving again would cut a second window out of the first. Every layer the
+                    // device produces is published; what the sensor can see is the sensor's
+                    // business, and it is stated in ONE place now.
+                    // bpearl keeps its half-space cut: theta < M_PI is the up half of its own
+                    // (inverted) device frame, i.e. the downward dome in the world.
+                    if (name != "bpearl" or point.theta < M_PI)
                     {
                         point.x = lidar_point.x();
                         point.y = lidar_point.y();
