@@ -474,6 +474,14 @@ private:
     // thing on the 10 Hz wheel channel and the 125 Hz IMU channel.
     // ⚠ All zero (the default) is inert and the bridge publishes ground truth exactly as before.
     bool   sensor_noise_enabled_   = false;
+    // ★ SLIP COEFFICIENTS per unit speed since 2026-08-29, not flat densities. See the note at the
+    //   injection site: an encoder reporting zero counts is not a noisy reading of zero, it is the
+    //   ABSENCE of counts, and a flat density injects motion into a parked robot that the consumer
+    //   then integrates. sigma(v) = hypot(floor, k_slip * |v|).
+    double wheel_sigma_v_floor_    = 0.0005; // m/sqrt(s)   — sub-count residual at standstill
+    double wheel_sigma_w_floor_    = 0.0010; // rad/sqrt(s) — same, yaw
+    double wheel_sigma_v_eff_      = 0.0;    // the sigma ACTUALLY used for this sample
+    double wheel_sigma_w_eff_      = 0.0;
     double wheel_sigma_v_          = 0.0;   // m/sqrt(s)   — encoder velocity noise density
     double wheel_sigma_w_          = 0.0;   // rad/sqrt(s) — wheel-derived yaw-rate noise density
     double wheel_scale_v_          = 0.0;   // fraction: reported = true*(1+s), constant for the run

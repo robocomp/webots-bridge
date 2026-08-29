@@ -119,6 +119,8 @@ void SpecificWorker::initialize()
 
         // ── Synthetic sensor error — see the header for why the two channels differ ──
         try { sensor_noise_enabled_ = configLoader.get<bool>("SensorNoise.Enabled"); } catch(...) {}
+        try { wheel_sigma_v_floor_ = configLoader.get<double>("SensorNoise.WheelSigmaVFloor"); } catch(...) {}
+        try { wheel_sigma_w_floor_ = configLoader.get<double>("SensorNoise.WheelSigmaWFloor"); } catch(...) {}
         try { wheel_sigma_v_ = configLoader.get<double>("SensorNoise.WheelSigmaV"); } catch(...) {}
         try { wheel_sigma_w_ = configLoader.get<double>("SensorNoise.WheelSigmaW"); } catch(...) {}
         try { wheel_scale_v_ = configLoader.get<double>("SensorNoise.WheelScaleV"); } catch(...) {}
@@ -776,12 +778,28 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     {
         const double dt_pub = std::max(1e-3, fullpose_publish_period_ms * 1e-3);
         const double inv_sqrt_dt = 1.0 / std::sqrt(dt_pub);
+        // ★ SPEED-DEPENDENT, ported from p3bot-bridge 2026-08-29 where it was measured.
+        // A flat density says a PARKED robot's wheels are as noisy as a moving one's. They are not:
+        // an encoder at rest emits no counts, so it reports zero speed with near-certainty — that is
+        // the absence of counts, not a noisy reading of zero. On P3Bot the flat model injected
+        // 0.118 m/s into a demonstrably stationary robot and the localiser, having no way to know
+        // better, random-walked 210 mm over 3963 cycles with ground truth motionless. Fixing it took
+        // the parked drift from 3.49 to 0.122 mm/cycle.
+        // What actually scales with speed is slip and timing: a timing error dt_e becomes a velocity
+        // error v*dt_e/dt, and slip is a fraction of distance travelled — both proportional to v.
+        // Quantisation leaves a small floor.
+        //     sigma(v) = sqrt(sigma_floor^2 + (k_slip * |v|)^2)
+        const auto sigma_at = [](double floor_, double k_slip, double v)
+        { return std::hypot(floor_, k_slip * v); };
+        wheel_sigma_v_eff_ = sigma_at(wheel_sigma_v_floor_, wheel_sigma_v_,
+                                      std::hypot(velocity_local.x(), velocity_local.y()));
+        wheel_sigma_w_eff_ = sigma_at(wheel_sigma_w_floor_, wheel_sigma_w_, std::abs(rot_velocity));
         velocity_local.x() = static_cast<float>(velocity_local.x() * (1.0 + wheel_scale_v_)
-                                                + generate_noise(wheel_sigma_v_ * inv_sqrt_dt));
+                                                + generate_noise(wheel_sigma_v_eff_ * inv_sqrt_dt));
         velocity_local.y() = static_cast<float>(velocity_local.y() * (1.0 + wheel_scale_v_)
-                                                + generate_noise(wheel_sigma_v_ * inv_sqrt_dt));
+                                                + generate_noise(wheel_sigma_v_eff_ * inv_sqrt_dt));
         rot_velocity = rot_velocity * (1.0 + wheel_scale_w_)
-                     + generate_noise(wheel_sigma_w_ * inv_sqrt_dt);
+                     + generate_noise(wheel_sigma_w_eff_ * inv_sqrt_dt);
     }
 
     RoboCompFullPoseEstimation::FullPoseEuler pose_data;
@@ -818,12 +836,26 @@ void SpecificWorker::receiving_robotSpeed(webots::Supervisor* _robot, long times
     pose_data.simTimestamp = static_cast<long>(sim_now_ms);
     pose_data.simulated    = true;
 
-    // Nominal, config-driven. Measuring the simulator's own velocity noise would give ~0, and a zero
-    // variance reads downstream as infinite confidence; the real base controller overwrites these once
-    // calibrated. Only the velocity block is known, so pose and acceleration say "unknown".
-    pose_data.velCov.m00 = static_cast<float>(nominal_vel_var_);   // vx
-    pose_data.velCov.m11 = static_cast<float>(nominal_vel_var_);   // vy
-    pose_data.velCov.m55 = static_cast<float>(nominal_rot_var_);   // vrz
+    // ★ THE VARIANCE ADVERTISED IS THE ONE ACTUALLY USED for this sample, so velCov varies with speed
+    // exactly as the injected noise does. It used to be a bare nominal constant, which made
+    // room_concept's OdomVarianceInjection channel live and INERT — it converts a stated variance to
+    // a density, and a constant has nothing to say. A consumer recovering sigma(v) as sqrt(var*dt)
+    // now gets ~0 at rest (nothing to integrate) and the slip term at speed (the prior loosens where
+    // it should). Ported from p3bot-bridge 2026-08-29.
+    // dt is the PUBLISH period: the interval a consumer integrates one sample across.
+    const double dt_cov = std::max(1e-3, fullpose_publish_period_ms * 1e-3);
+    const double vel_extra = sensor_noise_enabled_
+                           ? wheel_sigma_v_eff_ * wheel_sigma_v_eff_ / dt_cov : 0.0;
+    const double rot_extra = sensor_noise_enabled_
+                           ? wheel_sigma_w_eff_ * wheel_sigma_w_eff_ / dt_cov : 0.0;
+    // A published variance is NEVER 0: zero reads downstream as infinite confidence and hands that
+    // channel unlimited authority, silently. Strictly positive, or exactly -1 for "producer does not
+    // know" — the same contract the pose and acceleration blocks below use.
+    const auto safe_var_v = [](double v) -> double
+    { return (v < 0.0) ? -1.0 : std::max(v, 1e-12); };
+    pose_data.velCov.m00 = static_cast<float>(safe_var_v(nominal_vel_var_ + vel_extra));   // vx
+    pose_data.velCov.m11 = static_cast<float>(safe_var_v(nominal_vel_var_ + vel_extra));   // vy
+    pose_data.velCov.m55 = static_cast<float>(safe_var_v(nominal_rot_var_ + rot_extra));   // vrz
     pose_data.poseCov.m00 = -1.f;
     pose_data.accCov.m00  = -1.f;
 

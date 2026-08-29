@@ -96,6 +96,18 @@ FullPose.PublishPeriod = 100
 #   WheelSigmaV = 0.006   WheelSigmaW = 0.010   WheelScaleV = 0.0   WheelScaleW = 0.06
 #   GyroSigma   = 0.002   GyroBias    = 0.0
 SensorNoise.Enabled     = true
+
+# ★ SLIP COEFFICIENTS per unit speed since 2026-08-29, NOT flat densities. sigma(v) =
+#   sqrt(Floor^2 + (WheelSigmaV * |v|)^2). An encoder at rest emits no counts, so it reports zero
+#   with near-certainty; a flat density injects motion into a parked robot and the consumer
+#   integrates it. Measured on P3Bot: parked drift 3.49 -> 0.122 mm/cycle.
+# ⚠ The FLOORS are carried over from P3Bot and are NOT measured on Shadow. Shadow's encoders and
+#   its differential base are not P3Bot's mecanum one. Re-measure with the robot demonstrably
+#   parked (the zero-command residual) before trusting them; they are a starting point, not a
+#   result. The same caution applies to reading WheelSigmaV/W as slip rather than as the flat
+#   density they used to be.
+SensorNoise.WheelSigmaVFloor = 0.0005   # m/sqrt(s)   — sub-count residual at standstill
+SensorNoise.WheelSigmaWFloor = 0.0010   # rad/sqrt(s) — same, yaw
 SensorNoise.WheelSigmaV = 0.006   # m/sqrt(s)   encoder velocity noise: ~19 mm/s of jitter at 10 Hz
 SensorNoise.WheelSigmaW = 0.010   # rad/sqrt(s) wheel-derived yaw-rate noise
 SensorNoise.WheelScaleV = 0.0     # no odometer scale error assumed; raise if the real base shows one
