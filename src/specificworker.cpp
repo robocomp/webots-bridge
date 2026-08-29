@@ -980,8 +980,23 @@ static double lidar_tilt_angle(webots::Supervisor* sup, webots::Lidar* dev, cons
             else { f = node->getBaseNodeField("tiltAngle"); if (f != nullptr) how = "getBaseNodeField"; }
             if (f != nullptr) tilt = f->getSFFloat();
         }
+    // The MOUNT as well, because "is the cloud upside down?" cannot be answered from the beam
+    // geometry alone, and reading it here beats inferring it from a proto file that may not be
+    // the one the running world loaded.
+    double rot[4] = {0, 0, 0, 0};
+    if (sup != nullptr and dev != nullptr)
+        if (webots::Node* node = sup->getFromDevice(dev); node != nullptr)
+        {
+            webots::Field* rf = node->getField("rotation");
+            if (rf == nullptr) rf = node->getBaseNodeField("rotation");
+            if (rf != nullptr)
+                if (const double* v = rf->getSFRotation(); v != nullptr)
+                    for (int k = 0; k < 4; ++k) rot[k] = v[k];
+        }
     std::cout << "[Lidar] " << name << ": tiltAngle = " << tilt << " rad ("
-              << tilt * 180.0 / M_PI << " deg, " << how << ")" << std::endl;
+              << tilt * 180.0 / M_PI << " deg, " << how << ")"
+              << "  node rotation = [" << rot[0] << " " << rot[1] << " " << rot[2]
+              << "] " << rot[3] << " rad" << std::endl;
     cache[name] = tilt;
     return tilt;
 }
@@ -1062,14 +1077,27 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
     // `tiltAngle` rotates the whole fan; negative tilts it DOWN (measured on P3Bot: -0.34 rad
     // puts the H32F70's fan centre at -19.5 deg, matching the unit's -20).
     // theta convention in this function: M_PI is the horizon and LARGER than M_PI is DOWN, so
-    // the down-positive elevation of layer j is (-tilt - vfov/2 + j*step).
+    // the down-positive elevation of layer j is (-tilt + vfov/2 - j*step).
+    //
+    // ★★★ROW 0 IS THE BOTTOM OF THE FAN, AND THAT IS MEASURED, NOT READ. The Lidar reference says
+    // the depth values run "from the top to the bottom layer", so this was first written the other
+    // way round — and the published cloud then put 27% of its points OUTSIDE the room's 0..3 m
+    // slab, with no ceiling plane anywhere. Re-mapping the SAME recorded frame (26220 points) row
+    // 0 -> bottom drops that to 10.8%, puts 0% below the floor, and makes a 674-point plane appear
+    // at body z = 2.93 m -- the apartment's 3.00 m ceiling. That is the whole argument; the doc's
+    // wording loses to the ceiling.
+    // ⚠This is INVISIBLE on a symmetric fan, which is why it survived so long: reversing the order
+    // of a fan that is symmetric about its own horizon maps the kept half onto the mirror half,
+    // and for the bpearl (+-90 deg, no tilt) the resulting dome is identical either way. The helios
+    // is the first ASYMMETRIC fan this bridge has ever reconstructed, so it is the first sensor
+    // that could detect the error at all.
     std::vector<float> v_angle(verticalResolution);
     std::vector<float> v_cos(verticalResolution);
     std::vector<float> v_sin(verticalResolution);
     const double v_step = (verticalResolution > 1) ? verticalFov / (verticalResolution - 1) : 0.0;
     for (int j = 0; j < verticalResolution; ++j)
     {
-        const double elev_down = -tiltAngle - verticalFov / 2.0 + j * v_step;
+        const double elev_down = -tiltAngle + verticalFov / 2.0 - j * v_step;
         float verticalAngle = static_cast<float>(M_PI + elev_down);
         v_angle[j] = verticalAngle;
         v_cos[j] = std::cos(verticalAngle);
