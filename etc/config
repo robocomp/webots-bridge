@@ -40,12 +40,15 @@ Period.Sensors = 32
 
 # Running gear of the robot in the LOADED world -- these must agree or the bridge opens motors that
 # do not exist.
-#   "mecanum"      - Shadow.proto: four mecanum wheels. What every world except piso.wbt instantiates.
-#   "differential" - ShadowDiff.proto: two drive wheels on the lateral axis plus front/back casters,
-#                    the real robot's layout. Defaults R and half-track to the real robot's own
-#                    numbers (SVD48VBase/etc/config_diferential: wheelRadius 100 mm, axesLength
-#                    518 mm), so nothing here is fitted to the simulator. advx is refused: a
-#                    differential base cannot strafe.
+#   "differential" - Shadow.proto: two drive wheels on the lateral axis plus front/back casters,
+#                    the real robot's layout, and since 2026-08-30 the ONLY Shadow there is. Every
+#                    world that instantiates `Shadow` needs this. Defaults R and half-track to the
+#                    real robot's own numbers (SVD48VBase/etc/config_diferential: wheelRadius 100 mm,
+#                    axesLength 518 mm), so nothing here is fitted to the simulator. advx is refused:
+#                    a differential base cannot strafe.
+#   "mecanum"      - four wheels named wheel1..wheel4. This is P3Bot.proto. It was ALSO what
+#                    Shadow.proto was until 2026-08-30, when the differential ShadowDiff.proto
+#                    replaced it -- so a world last run as a mecanum Shadow needs this line changed.
 # Base.WheelRadius / Base.HalfTrack override the defaults if a world's robot differs.
 Base.Kinematics = "differential"
 
@@ -131,7 +134,7 @@ SensorNoise.WheelScaleV = 0.0     # no odometer scale error assumed; raise if th
 # The gyro is accurate to within the test's own resolution. The wheel over-reports 23%, and with the
 # +0.06 injected here backed out its INTRINSIC error is 1.16.
 #
-# ⚠ THAT IS NOT A CALIBRATION BUG. Checked against ShadowDiff.proto -- the robot piso.wbt actually
+# ⚠ THAT IS NOT A CALIBRATION BUG. Checked against Shadow.proto -- the robot piso.wbt actually
 # loads, not Shadow.proto -- the drive-wheel anchors are at x = +-0.259 and the wheel radius is 0.1,
 # which match half_track_ = 0.259 and wheel_radius_ = 0.100 exactly. The constants are right.
 #
@@ -180,7 +183,7 @@ Ice.MessageSizeMax = "20004800"
 # Webots spreads numberOfLayers SYMMETRICALLY about the device horizon and IGNORES tiltAngle
 # (measured 2026-08-29: only the untilted reconstruction puts 100% of a recorded frame inside the
 # room and the floor at z = 0). An RS-Helios H32F70 is not symmetric — its 32 channels span
-# -55..+15 deg — so Shadow.proto/ShadowDiff.proto generate a symmetric 110 deg fan (2 x 55) with
+# -55..+15 deg — so Shadow.proto generates a symmetric 110 deg fan (2 x 55) with
 # 50 layers, which CONTAINS every real channel elevation, and this window drops the 18 layers
 # above +15 that the unit does not have. 50 layers over 110 deg = 2.2449 deg/layer; the window
 # keeps layers 18..49 = 32 channels at +14.6 .. -55.0 deg.

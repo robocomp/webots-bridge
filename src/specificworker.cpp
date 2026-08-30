@@ -192,7 +192,7 @@ void SpecificWorker::initialize()
         // Inicializa los motores y los sensores de posición.
         // Mecanum order is {wheel2, wheel1, wheel4, wheel3} -- it is what the IK below is written
         // against, not alphabetical, so do not "tidy" it. Differential is {left, right}, matching
-        // ShadowDiff.proto and the sign convention in the forward kinematics.
+        // Shadow.proto and the sign convention in the forward kinematics.
         const char *mecanumMotorNames[4] = {"wheel2", "wheel1", "wheel4", "wheel3"};
         const char *diffMotorNames[2]    = {"wheel_left", "wheel_right"};
         const char **motorNames = base_kinematics_ == BaseKinematics::Differential
@@ -971,7 +971,7 @@ double SpecificWorker::generate_noise(double stddev)
 
 // Beam geometry that the controller API does NOT expose: `tiltAngle` has no getter on
 // webots::Lidar, so it is read straight off the scene tree. The Lidar lives INSIDE a PROTO
-// (ShadowDiff/Shadow), where getField() returns null — getBaseNodeField() is the accessor that
+// (a PROTO such as Shadow), where getField() returns null — getBaseNodeField() is the accessor that
 // reaches a base node's own field through the PROTO wrapper. Cached per device: a Supervisor
 // getter blocks until the simulator answers, and this value cannot change while the world runs.
 //

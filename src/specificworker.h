@@ -377,9 +377,13 @@ private:
     VelocitySource fullpose_velocity_source_ = VelocitySource::Wheels;
 
     // --- Which running gear this world's robot actually has -------------------------------------
-    // Shadow.proto is a four-wheel mecanum; ShadowDiff.proto is the real robot's layout -- two drive
-    // wheels on the lateral axis plus front and back casters. Both exist, so the kinematics is chosen
-    // at runtime rather than compiled in, and a world swap needs only a config line.
+    // Shadow.proto is DIFFERENTIAL -- two drive wheels on the lateral axis plus front and back
+    // casters, the real robot's layout. It used to be a four-wheel mecanum, with the differential
+    // version living beside it as ShadowDiff.proto; on 2026-08-30 the differential one replaced it and
+    // ShadowDiff was deleted, so there is now ONE Shadow and it is the machine that exists. Every world
+    // that instantiates `Shadow` therefore needs Base.Kinematics = "differential".
+    // "mecanum" is NOT dead: it is what P3Bot.proto is (wheel1..wheel4). The kinematics stays a runtime
+    // choice rather than a compiled-in one because the two robots share this bridge.
     //
     // The differential constants are the real robot's own, from
     // SVD48VBase/etc/config_diferential: wheelRadius = 100 mm, axesLength = 518 mm. That component
