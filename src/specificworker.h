@@ -71,53 +71,28 @@ using namespace std;
 // The proto puts the four wheel centres at (x = ±0.21, y ∈ {-0.10, +0.16}) in the robot's local
 // frame, where x is lateral and y longitudinal (the bridge maps forward = local y, side = local x —
 // see update_base_state()). So the half-extents are 0.13 longitudinal and 0.21 lateral.
-#define WHEEL_RADIUS 0.05   // matches Interior/ExteriorWheel.proto `radius 0.05`
-#define LX 0.130  // longitudinal half-distance, wheel centre to centre / 2 [m]  (proto: (0.16-(-0.10))/2)
-#define LY 0.210  // lateral half-distance [m]  (proto: |±0.21|)
+// FALLBACK geometry only -- Base.ConfigFile supplies the real numbers at startup (see
+// load_base_limits). These are the differential Shadow's, from the robot's own driver config
+// SVD48VBase/etc/config_diferential: wheelRadius = 100 mm, axesLength = 518 mm. That component uses
+// axesLength as the TRACK (its 2x2 m_wheels is [[-1, L/2], [-1, -L/2]]), so the half-track is 0.259.
+// Using ITS numbers rather than ones fitted to the simulator is the whole point: a constant measured
+// against the simulator is a constant that only describes the simulator.
+#define WHEEL_RADIUS 0.100
+#define HALF_TRACK   0.259
+
+// Two driven wheels, and it is no longer a variable: see "The running gear" below. At file scope
+// because it bounds member arrays, and a member declared later in the class is not visible to an
+// array bound earlier in it.
+inline constexpr int kDriveWheels = 2;
 //
-// LY WAS 0.237, and that single constant was measurably wrong. Only rotation uses (LX+LY), so it
-// showed up as the base turning FASTER than commanded while translation stayed correct:
-//     bridge (LX+LY) 0.372 / true 0.340 = 1.094 predicted over-rotation
-//     measured over 15 in-place turns against room_concept's SDF posterior: 1.109  (1.3% apart)
-// Measured by integrating the localizer's own cmd_dth / meas_dth columns, not by re-integrating the
-// logged velocity columns — the command is a sparse stepwise signal and sampling it at frame times
-// exaggerates its error badly (it read as 34% that way instead of 11%).
+// HISTORY, kept because it is the reason this bridge takes its geometry from the base component's
+// config rather than from the world. Until 2026-08-30 this bridge also drove a FOUR-WHEEL MECANUM
+// Shadow, whose rotation term rode on a hand-entered (LX+LY): LY was 0.237 against a true 0.210, and
+// that single wrong constant predicted a 1.094x over-rotation which is exactly what was measured. A
+// number transcribed from a proto into a bridge is a number that will eventually disagree with it.
+// The mecanum Shadow is gone -- Shadow.proto is differential and is the only Shadow -- and the
+// geometry now comes from SVD48VBase's own file, which the real robot reads too.
 //
-// Downstream cost while it was wrong: room_concept's command motion prior under-predicted rotation,
-// so the SDF had to drag heading further into every turn, which suppressed the localizer's
-// prediction early-exit during rotation. Anything doing OPEN-LOOP rotation from a commanded omega
-// (a controller's final-orientation move) was simply 9% short.
-//
-// ── Known, NOT yet corrected: the wheelbase is asymmetric ─────────────────────────────────────────
-// Those y offsets are -0.10 and +0.16, so the wheel centroid sits 0.03 m AHEAD of the proto origin,
-// while the inverse kinematics below is the standard symmetric-mecanum form and therefore rotates
-// the robot about that centroid, not about the frame origin the caller means. A commanded pure
-// rotation consequently translates the origin at |v| = 0.03·|omega| — about 4.5 cm/s at 1.5 rad/s,
-// tracing a 3 cm-radius arc instead of pivoting in place.
-//
-// MEASURED 08-09, so this is no longer a prediction. Fitting p_k + R(theta_k)·d = c over a clean
-// pivot in room_concept's etc/pose_trace.csv — 139° swept, only 4.8 cm of travel, 4.6 mm mean and
-// 8.2 mm max residual — gives |d| = 2.72 cm against the 3.0 cm predicted, with 2.72 of it on one
-// axis and 0.14 on the other. A four-turn stretch in the same run agrees in direction. So the
-// asymmetry is real, and its magnitude is 0.027 m rather than the nominal 0.03.
-//
-// The correction is a twist transport, no change to the kinematics needed: rotating about the origin
-// is rotating about the centroid plus one translational term. The measured offset lies along the
-// robot frame's LATERAL axis, so the origin's induced velocity during a pivot is LONGITUDINAL and
-// the term goes on advz (see apply_pending_speed_command) — it was on advx in the first draft of
-// this, which was wrong.
-//
-// What is still NOT established is the SIGN, because it rides on conventions that reading cannot
-// settle: room_concept maps (adv, side) to robot (x, y) one way at room_concept.cpp:3967 and the
-// other way at :4013, and cmd.rot's sign against local z rests on a "CW positive" comment that looks
-// stale. Backwards doubles the error to 5.4 cm, so this ships DISABLED at 0.0.
-//
-// ONE PIVOT SETTLES IT. A pivot means rotation in place: zero commanded translation, net travel
-// under ~15 cm, and the fit residual under 1 cm (an arc gives 30-130 mm and is useless here).
-//   1. set WHEEL_CENTROID_OFFSET to +0.027
-//   2. drive one pivot of >= 180°
-//   3. re-fit d. Toward 0 confirms it; growing to ~5.4 cm means flip the constant's sign — flip the
-//      constant, not the expression, so this comment stays true.
 #define WHEEL_CENTROID_OFFSET 0.0  // [m] 0.0 = off; the measured value is 0.027 (verify the sign)
 
 // Publish velocities in per-WALL-second units instead of the true per-SIM-second ones. NOW OFF.
@@ -156,7 +131,7 @@ using namespace std;
 
 // Set to 1 to emit wheel_odom_diag.csv from receiving_robotSpeed: the encoder-derived twist and the
 // supervisor's, both in the SAME cycle and both per-SIM-second, so the difference between them IS the
-// mecanum slip. Everything needed to settle the FK's signs, bound the slip, and check the at-rest
+// wheel slip (on a differential base, the scrub of turning by dragging the wheels sideways). Everything needed to settle the FK's signs, bound the slip, and check the at-rest
 // floor against the isMoving threshold is in that one file. Off = zero cost.
 #ifndef BRIDGE_WHEEL_ODOM_DIAG               // -DBRIDGE_WHEEL_ODOM_DIAG=1 turns it on
 #define BRIDGE_WHEEL_ODOM_DIAG 0
@@ -298,8 +273,8 @@ private:
     webots::RangeFinder* range_finder;
     webots::Camera* camera360_1;
     webots::Camera* camera360_2;
-    webots::Motor *motors[4];
-    webots::PositionSensor *ps[4];
+    webots::Motor *motors[kDriveWheels];
+    webots::PositionSensor *ps[kDriveWheels];
     webots::Accelerometer* accelerometer;
     webots::Gyro* gyroscope;
 	webots::Camera* zed;
@@ -346,27 +321,27 @@ private:
     // --- Wheel odometry: the velocity this bridge PUBLISHES on FullPoseEstimationPub -------------
     // Until now that channel carried robotNode->getVelocity() -- the supervisor's ground truth. It has
     // no wheel slip, and nothing in the sim exercised the path the real robot actually uses: the base
-    // controller reads its four wheel speeds and inverts the mecanum kinematics
-    // (SVD48VBase/src/specificworker.py:227, `inv_m_wheels @ driver.get_speed()`). Downstream that
+    // controller reads its wheel speeds and inverts the drive kinematics
+    // (SVD48VBase/src/specificworker.py:227, `inv_m_wheels @ driver.get_speed()`; for this base
+    // m_wheels is the 2x2 differential matrix [[-1, L/2], [-1, -L/2]]). Downstream that
     // absence is a documented blocker -- room_concept's se2_preintegration.h:85 cannot identify an
     // odometry scale in simulation because "there is no encoder in the sim loop at all".
     //
-    // The four PositionSensors were already resolved and enabled in initialize(); getValue() had
-    // simply never been called. So this is the FORWARD kinematics, the exact algebraic inverse of the
-    // IK in apply_pending_speed_command() and built from the same WHEEL_RADIUS/LX/LY so the two cannot
-    // drift apart:
-    //     advz = R/4       * ( w0 + w1 + w2 + w3)
-    //     advx = R/4       * (-w0 + w1 + w2 - w3)
-    //     rot  = R/(4*c)   * ( w0 - w1 + w2 - w3)      c = LX + LY
-    // The IK matrix is column-orthogonal (norms 4, 4, 4c^2), so that least-squares inverse is exact.
+    // The PositionSensors were already resolved and enabled in initialize(); getValue() had simply
+    // never been called. So this is the FORWARD kinematics, the exact algebraic inverse of the IK in
+    // apply_pending_speed_command() and built from the same wheel_radius_/half_track_ so the two
+    // cannot drift apart:
+    //     advz = R/2       * ( wl + wr)
+    //     advx = 0                                     structurally, not measured-as-zero
+    //     rot  = R/(2*c)   * ( wr - wl)                c = half-track
     //
     // The GYRO IS DELIBERATELY NOT FUSED IN HERE. FullPoseEstimationPub is the *wheel* channel, the
     // sim's stand-in for SVD48VBase; the IMU is a separate Ice interface the consumer reads and
     // integrates itself. Pre-fusing them in the bridge would leave that consumer no way to weigh the
     // two sources against each other, which is the entire job of the filter component this arrangement
-    // stands in for. Consequence worth knowing: `rot` therefore rides on (LX+LY) again, so the LY
-    // calibration in commit 5968a65 matters for this channel in a way it would not if the gyro
-    // supplied the yaw rate.
+    // stands in for. Consequence worth knowing: `rot` therefore rides on the half-track, so getting
+    // that constant from the base component's own config (rather than transcribing it) matters for
+    // this channel in a way it would not if the gyro supplied the yaw rate.
     //
     // TWO ANCHORS, and the distinction matters. `pub_*` is differenced over the whole publish interval
     // (100 ms), so the published velocity is the exact MEAN over the interval a consumer will integrate
@@ -376,33 +351,23 @@ private:
     enum class VelocitySource { Wheels, Supervisor };
     VelocitySource fullpose_velocity_source_ = VelocitySource::Wheels;
 
-    // --- Which running gear this world's robot actually has -------------------------------------
-    // Shadow.proto is DIFFERENTIAL -- two drive wheels on the lateral axis plus front and back
-    // casters, the real robot's layout. It used to be a four-wheel mecanum, with the differential
-    // version living beside it as ShadowDiff.proto; on 2026-08-30 the differential one replaced it and
-    // ShadowDiff was deleted, so there is now ONE Shadow and it is the machine that exists. Every world
-    // that instantiates `Shadow` therefore needs Base.Kinematics = "differential".
-    // "mecanum" is NOT dead: it is what P3Bot.proto is (wheel1..wheel4). The kinematics stays a runtime
-    // choice rather than a compiled-in one because the two robots share this bridge.
+    // --- The running gear: DIFFERENTIAL, and only differential ----------------------------------
+    // Two drive wheels on the lateral axis plus front and back casters -- the real Shadow's layout,
+    // and since 2026-08-30 the only one Shadow.proto has. This bridge used to select between that and
+    // a four-wheel mecanum at runtime because both protos existed; ShadowDiff.proto replaced
+    // Shadow.proto and the choice went away with it. P3Bot, which IS a mecanum, has its own bridge
+    // (webots-p3bot/components/p3bot-bridge), so nothing here needs to serve both any more.
     //
-    // The differential constants are the real robot's own, from
-    // SVD48VBase/etc/config_diferential: wheelRadius = 100 mm, axesLength = 518 mm. That component
-    // uses axesLength as the TRACK (its 2x2 m_wheels is [[-1, L/2], [-1, -L/2]]), so the half-track
-    // is 0.259. Using its numbers rather than fitted ones is the whole point: a constant measured
-    // against the simulator is a constant that only describes the simulator.
+    // Geometry is the real robot's own (see WHEEL_RADIUS / HALF_TRACK above and Base.ConfigFile).
     //
-    //   mecanum       advz = R/4     * ( w0 + w1 + w2 + w3)
-    //                 advx = R/4     * (-w0 + w1 + w2 - w3)
-    //                 rot  = R/(4c)  * ( w0 - w1 + w2 - w3)      c = LX + LY
-    //   differential  advz = R/2     * ( wl + wr)
-    //                 advx = 0                                   it physically cannot strafe
-    //                 rot  = R/(2c)  * ( wr - wl)                c = half-track
+    //   FK   advz = R/2     * ( wl + wr)
+    //        advx = 0                                  it physically cannot strafe
+    //        rot  = R/(2c)  * ( wr - wl)               c = half-track
     //
-    // Both keep the axis -1 0 0 convention, so a positive motor velocity still means forward and the
-    // sign handling downstream is identical.
+    // Axis -1 0 0 throughout, so a positive motor velocity means forward.
     //
-    // MEASURED 2026-08-15, differential base in piso.wbt, 810 publish intervals against the
-    // supervisor (which OmniRobot still serves, which is why the comparison is possible at all):
+    // MEASURED 2026-08-15, 810 publish intervals against the supervisor (which OmniRobot still
+    // serves, which is why the comparison is possible at all):
     //     adv   1.000  (n=574)   translation is exact; also confirms R = 0.100
     //     rot   1.082  (n=114 pivots)   the wheels over-report rotation by 8.2%
     //     side  0                a differential base cannot strafe, and the model says so
@@ -416,16 +381,8 @@ private:
     // CONSEQUENCE FOR CONTROL, which is not odometry's problem but is real: the IK uses the same
     // constant, so a commanded rotation under-delivers by about the same 8%. Anything steering
     // open-loop on a commanded omega will fall short; close the loop.
-    //
-    // For contrast, the same measurement on the MECANUM base in this world read rot 0.845 -- the body
-    // turning FASTER than the wheels implied, which is not a thing wheels can do. That was piso.wbt
-    // missing the ContactProperties that make mecanum rollers slide (see the note in the world file);
-    // without them the rollers grip and the base is a skid-steer wearing mecanum wheels.
-    enum class BaseKinematics { Mecanum, Differential };
-    BaseKinematics base_kinematics_ = BaseKinematics::Mecanum;
-    int    wheel_count_  = 4;
     double wheel_radius_ = WHEEL_RADIUS;
-    double half_track_   = LX + LY;      // the c above
+    double half_track_   = HALF_TRACK;
     bool   warned_advx_ignored_ = false; // a differential base cannot strafe; say so once, not per call
 
     // ── WHAT THE REAL BASE WILL AND WILL NOT DO ───────────────────────────────────────────────────
@@ -475,7 +432,7 @@ private:
     // What the motors were last actually told, in rad/s. The ramp's state: it is the CURRENT wheel
     // speed the driver is holding, not the commanded one, and the difference between the two is the
     // whole point.
-    double applied_wheel_speed_[4]{};
+    double applied_wheel_speed_[kDriveWheels]{};
     bool   speed_command_seen_ = false;   // do not touch the motors before the first command arrives
     std::chrono::steady_clock::time_point last_clamp_warn_{};
 
@@ -491,15 +448,15 @@ private:
 
     struct WheelOdometry
     {
-        double step_angle[4]{};             // rad, per-step anchor      (diagnostic only)
+        double step_angle[kDriveWheels]{};             // rad, per-step anchor      (diagnostic only)
         double step_sim_t = 0.0;
-        double pub_angle[4]{};              // rad, per-publish anchor   (what gets published)
+        double pub_angle[kDriveWheels]{};              // rad, per-publish anchor   (what gets published)
         double pub_sim_t  = 0.0;
         bool   seeded     = false;          // both anchors hold a real sample
         Eigen::Vector2f v_local{0.f, 0.f};  // per SIM second. (0) = -side, (1) = forward -- the
                                             // shadow_velocity_local convention, see receiving_robotSpeed
         double rot        = 0.0;            // rad/sim-s about local +z, encoders only
-        double step_w[4]{};                 // per-wheel rates over one step   (diagnostic only)
+        double step_w[kDriveWheels]{};                 // per-wheel rates over one step   (diagnostic only)
         Eigen::Vector2f step_v_local{0.f, 0.f};
         double step_rot   = 0.0;
         double pub_dt     = 0.0;            // s, the interval v_local/rot were differenced over

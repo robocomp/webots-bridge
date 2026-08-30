@@ -109,17 +109,21 @@ void SpecificWorker::initialize()
         try { fullpose_publish_period_ms = configLoader.get<int>("FullPose.PublishPeriod"); } catch(...) {}
         if (fullpose_publish_period_ms < 1) fullpose_publish_period_ms = 1;
 
-        // Which running gear the loaded world's robot has. Defaults to mecanum, which is what
-        // Shadow.proto is and what every world other than piso.wbt still instantiates.
-        std::string kinematics = "mecanum";
-        try { kinematics = configLoader.get<std::string>("Base.Kinematics"); } catch(...) {}
-        if (kinematics == "differential")
+        // There is no running-gear choice any more: Shadow is DIFFERENTIAL and Shadow.proto is the
+        // only Shadow (webots-shadow 98635f2). Base.Kinematics is accepted and IGNORED if still
+        // present in an old config, but anything other than "differential" is called out rather than
+        // silently obeyed -- a config asking for a mecanum is a config written for a robot this
+        // bridge no longer drives, and the user should hear that instead of wondering why it had no
+        // effect. P3Bot, which IS a mecanum, has its own bridge.
+        try
         {
-            base_kinematics_ = BaseKinematics::Differential;
-            wheel_count_  = 2;
-            wheel_radius_ = 0.100;   // SVD48VBase/etc/config_diferential: wheelRadius = 100 mm
-            half_track_   = 0.259;   //                                    axesLength  = 518 mm, /2
+            const auto k = configLoader.get<std::string>("Base.Kinematics");
+            if (k != "differential")
+                std::cout << "[base] ⚠ Base.Kinematics = \"" << k << "\" is obsolete and IGNORED: this "
+                          << "bridge drives the differential Shadow only. Remove the key; for a mecanum "
+                          << "robot use webots-p3bot/components/p3bot-bridge." << std::endl;
         }
+        catch(...) {}
         // ★THE BASE COMPONENT OWNS ITS OWN KINEMATICS AND LIMITS. Read them from ITS config -- the same
         // file the real robot runs -- rather than keeping a copy here. This supersedes the constants
         // just above (which stay as the fallback for a world with no real counterpart) and is what
@@ -190,14 +194,9 @@ void SpecificWorker::initialize()
         }
 
         // Inicializa los motores y los sensores de posición.
-        // Mecanum order is {wheel2, wheel1, wheel4, wheel3} -- it is what the IK below is written
-        // against, not alphabetical, so do not "tidy" it. Differential is {left, right}, matching
-        // Shadow.proto and the sign convention in the forward kinematics.
-        const char *mecanumMotorNames[4] = {"wheel2", "wheel1", "wheel4", "wheel3"};
-        const char *diffMotorNames[2]    = {"wheel_left", "wheel_right"};
-        const char **motorNames = base_kinematics_ == BaseKinematics::Differential
-                                      ? diffMotorNames : mecanumMotorNames;
-        //const char *sensorNames[4] = {"wheel1sensor", "wheel2sensor", "wheel3sensor", "wheel4sensor"};
+        // {left, right}, matching Shadow.proto and the sign convention in the forward kinematics.
+        // The ORDER is what the FK and IK are written against, not alphabetical: do not "tidy" it.
+        const char *motorNames[kDriveWheels] = {"wheel_left", "wheel_right"};
 
         // Inicializa los sensores soportados.
         lidar_helios = robot->getLidar("helios");
@@ -222,14 +221,15 @@ void SpecificWorker::initialize()
             camera360_1->enable(sensor_period);
             camera360_2->enable(sensor_period);
         }
-        for (int i = 0; i < 4; i++) { motors[i] = nullptr; ps[i] = nullptr; }
-        for (int i = 0; i < wheel_count_; i++)
+        for (int i = 0; i < kDriveWheels; i++) { motors[i] = nullptr; ps[i] = nullptr; }
+        for (int i = 0; i < kDriveWheels; i++)
         {
             motors[i] = robot->getMotor(motorNames[i]);
             if (motors[i] == nullptr)
             {
-                std::cout << "No motor named '" << motorNames[i] << "' in this world -- is "
-                          << "Base.Kinematics right for the robot it loads?" << std::endl;
+                std::cout << "No motor named '" << motorNames[i] << "' in this world -- this bridge "
+                          << "drives the differential Shadow (wheel_left/wheel_right). A world whose "
+                          << "robot has wheel1..wheel4 is a mecanum: use p3bot-bridge." << std::endl;
                 continue;
             }
             ps[i] = motors[i]->getPositionSensor();
@@ -245,7 +245,7 @@ void SpecificWorker::initialize()
         // Wheel odometry needs every encoder. Fall back LOUDLY rather than silently, because a quiet
         // revert to the supervisor is indistinguishable from the wheel path not working.
         if (fullpose_velocity_source_ == VelocitySource::Wheels)
-            for (int i = 0; i < wheel_count_; i++)
+            for (int i = 0; i < kDriveWheels; i++)
                 if (ps[i] == nullptr)
                 {
                     std::cout << "No position sensor on motor " << motorNames[i]
@@ -254,7 +254,7 @@ void SpecificWorker::initialize()
                     velocity_source = "supervisor";
                     break;
                 }
-        std::cout << "Base: " << kinematics << " (" << wheel_count_ << " driven wheels, R="
+        std::cout << "Base: differential (" << kDriveWheels << " driven wheels, R="
                   << wheel_radius_ << " m, half-track=" << half_track_ << " m)" << std::endl;
         std::cout << "FullPose: " << velocity_source << "-derived velocity @ "
                   << (1000.0 / fullpose_publish_period_ms) << " Hz; IMU @ step rate ("
@@ -522,7 +522,7 @@ long SpecificWorker::acquisition_wall_ms(long loop_wall_ms, double sim_now_ms, i
 }
 
 // Runs in the compute() thread only, from receiving_robotSpeed, so this needs no lock -- same as
-// clock_pairs_. Differences the four wheel encoders over SIMULATION time and inverts the mecanum IK of
+// clock_pairs_. Differences the wheel encoders over SIMULATION time and inverts the differential IK of
 // apply_pending_speed_command(). Returns false when there is no usable sample, in which case the
 // previous velocity is held -- which is what a real odometry driver does on a dropped frame.
 //
@@ -531,8 +531,8 @@ long SpecificWorker::acquisition_wall_ms(long loop_wall_ms, double sim_now_ms, i
 // integrate it across (see WheelOdometry in the header for why that matters).
 bool SpecificWorker::update_wheel_odometry(double sim_seconds, bool publishing)
 {
-    double angle[4] = {0, 0, 0, 0};
-    for (int i = 0; i < wheel_count_; ++i)
+    double angle[kDriveWheels] = {0, 0};
+    for (int i = 0; i < kDriveWheels; ++i)
     {
         if (ps[i] == nullptr) { wheel_odo_.valid = false; return false; }
         angle[i] = ps[i]->getValue();
@@ -545,26 +545,16 @@ bool SpecificWorker::update_wheel_odometry(double sim_seconds, bool publishing)
     // derivation and for why the gyro is not fused in here.
     const auto twist_from = [this](const double *anchor_angle, const double *angle_now, double dt)
     {
-        double w[4] = {0, 0, 0, 0};
-        for (int i = 0; i < wheel_count_; ++i)
+        double w[kDriveWheels] = {0, 0};
+        for (int i = 0; i < kDriveWheels; ++i)
             w[i] = (angle_now[i] - anchor_angle[i]) / dt;
 
         const double R = wheel_radius_, c = half_track_;
-        double advz_fk, advx, rot;
-        if (base_kinematics_ == BaseKinematics::Differential)
-        {
-            // w[0] = left, w[1] = right. A differential base cannot translate sideways, so advx is
-            // structurally zero here -- not measured-as-zero, but absent from the model.
-            advz_fk = R * 0.5       * (w[1] + w[0]);
-            advx    = 0.0;
-            rot     = R / (2.0 * c) * (w[1] - w[0]);
-        }
-        else
-        {
-            advz_fk = R * 0.25      * ( w[0] + w[1] + w[2] + w[3]);
-            advx    = R * 0.25      * (-w[0] + w[1] + w[2] - w[3]);
-            rot     = R / (4.0 * c) * ( w[0] - w[1] + w[2] - w[3]);
-        }
+        // w[0] = left, w[1] = right. A differential base cannot translate sideways, so advx is
+        // structurally zero here -- not measured-as-zero, but absent from the model.
+        const double advz_fk = R * 0.5       * (w[1] + w[0]);
+        const double advx    = 0.0;
+        const double rot     = R / (2.0 * c) * (w[1] - w[0]);
 
         // apply_pending_speed_command ADDS WHEEL_CENTROID_OFFSET*rot to advz, so a true inverse must
         // subtract it. A no-op at 0.0, wired in now so the two cannot silently stop being inverses on
@@ -635,7 +625,7 @@ bool SpecificWorker::update_wheel_odometry(double sim_seconds, bool publishing)
 
 #if BRIDGE_WHEEL_ODOM_DIAG
 // The encoder-derived twist and the supervisor's, in the SAME cycle and both per-SIM-second, so no
-// k_wall can confound the comparison and the difference between them IS the mecanum slip.
+// k_wall can confound the comparison and the difference between them IS the wheel slip (scrub).
 //
 // What each group settles:
 //   wh_*   vs sup_*   -- signs and scale of the forward kinematics, then the slip magnitude
@@ -1612,20 +1602,13 @@ bool SpecificWorker::load_base_limits(const std::string &path)
     if (const auto v = cfg_num(kv, "wheelRadius"))     wheel_radius_      = *v / 1000.0;
     if (const auto v = cfg_num(kv, "axesLength"))      half_track_        = *v / 2000.0;  // mm, /2 -> m
 
-    // ★CROSS-CHECK, DO NOT OVERRIDE. `baseType` says what the REAL base is; Base.Kinematics says which
-    // running gear the loaded WORLD gave the robot. They are different facts and both are legitimate,
-    // but if they disagree the sim is modelling a machine that is not the one being simulated -- say
-    // so rather than silently picking one.
-    if (const auto it = kv.find("baseType"); it != kv.end())
-    {
-        const bool real_is_omni = (it->second == "Omnidirectional");
-        const bool sim_is_omni  = (base_kinematics_ == BaseKinematics::Mecanum);
-        if (real_is_omni != sim_is_omni)
-            std::cout << "[base] ⚠ MISMATCH: the real base is '" << it->second << "' but this world's "
-                      << "robot is " << (sim_is_omni ? "mecanum (4 wheels)" : "differential (2 wheels)")
-                      << ". Base.Kinematics and " << path << " disagree about the machine."
-                      << std::endl;
-    }
+    // ★CROSS-CHECK, DO NOT OVERRIDE. `baseType` says what the REAL base is. This bridge drives the
+    // differential Shadow and nothing else, so an omnidirectional base config means the wrong file is
+    // wired up -- say so rather than quietly enforcing another robot's envelope on this one.
+    if (const auto it = kv.find("baseType"); it != kv.end() and it->second != "Differential")
+        std::cout << "[base] ⚠ MISMATCH: " << path << " describes a '" << it->second << "' base, but "
+                  << "this bridge drives the DIFFERENTIAL Shadow. Its speed and acceleration limits "
+                  << "are being applied to the wrong robot. (P3Bot has its own bridge.)" << std::endl;
 
     std::printf("[base] limits from %s: v_max=%.3f m/s  w_max=%.3f rad/s  accel=%.3f  decel=%.3f m/s^2 "
                 "| R=%.4f m  half_track=%.4f m\n",
@@ -1691,7 +1674,7 @@ void SpecificWorker::apply_pending_speed_command()
     const double advx     = cmd.advx * 0.001;   // mm/s -> m/s
     const double advz_cmd = cmd.advz * 0.001;
 
-    // Asymmetric-wheelbase compensation. The formula below is the symmetric mecanum form, so it
+    // Asymmetric-wheelbase compensation. The formula below is the symmetric form, so it
     // rotates the robot about the WHEEL CENTROID rather than about the frame origin the caller means.
     // MEASURED 08-09 by fitting p_k + R(theta_k)*d = c over a clean pivot (139 deg swept, 4.8 cm of
     // travel, 4.6 mm mean / 8.2 mm max residual): |d| = 2.72 cm, matching the 3.0 cm the proto's wheel
@@ -1710,30 +1693,18 @@ void SpecificWorker::apply_pending_speed_command()
     last_applied_cmd_ = {advx, advz_cmd, cmd.rot};   // what the wheels were actually told
 #endif
 
-    double speeds[4] = {0, 0, 0, 0};
-    if (base_kinematics_ == BaseKinematics::Differential)
+    // A differential base has no lateral degree of freedom, so advx is dropped rather than silently
+    // folded into something else. Say so once: a caller commanding side motion is working from a wrong
+    // model of the robot and should hear about it, but not 125 times a second.
+    if (std::fabs(advx) > 1e-4 and not warned_advx_ignored_)
     {
-        // A differential base has no lateral degree of freedom, so advx is dropped rather than
-        // silently folded into something else. Say so once: a caller commanding side motion is
-        // working from a wrong model of the robot and should hear about it, but not 125 times a
-        // second.
-        if (std::fabs(advx) > 1e-4 and not warned_advx_ignored_)
-        {
-            std::cout << "setSpeedBase: advx=" << advx << " m/s ignored -- this base is differential "
-                      << "and cannot translate sideways." << std::endl;
-            warned_advx_ignored_ = true;
-        }
-        speeds[0] = (advz - half_track_ * cmd.rot) / wheel_radius_;   // wheel_left
-        speeds[1] = (advz + half_track_ * cmd.rot) / wheel_radius_;   // wheel_right
+        std::cout << "setSpeedBase: advx=" << advx << " m/s ignored -- this base is differential "
+                  << "and cannot translate sideways." << std::endl;
+        warned_advx_ignored_ = true;
     }
-    else
-    {
-        const double c = half_track_;
-        speeds[0] = (advz - advx + c * cmd.rot) / wheel_radius_;
-        speeds[1] = (advz + advx - c * cmd.rot) / wheel_radius_;
-        speeds[2] = (advz + advx + c * cmd.rot) / wheel_radius_;
-        speeds[3] = (advz - advx - c * cmd.rot) / wheel_radius_;
-    }
+    double speeds[kDriveWheels] = {0, 0};
+    speeds[0] = (advz - half_track_ * cmd.rot) / wheel_radius_;   // wheel_left
+    speeds[1] = (advz + half_track_ * cmd.rot) / wheel_radius_;   // wheel_right
 
     // ── THE DRIVER'S RAMP ─────────────────────────────────────────────────────────────────────────
     // `speeds[]` is the TARGET the IK asked for. The real wheel driver does not jump to it: SVD48V.py
@@ -1753,7 +1724,7 @@ void SpecificWorker::apply_pending_speed_command()
     const double a_down = (max_decel_mps2_ > 0.0 and wheel_radius_ > 0.0)
                             ? max_decel_mps2_ / wheel_radius_ * dt : std::numeric_limits<double>::max();
 
-    for (int i = 0; i < wheel_count_; i++)
+    for (int i = 0; i < kDriveWheels; i++)
     {
         if (motors[i] == nullptr) continue;
         const double tgt = speeds[i];
