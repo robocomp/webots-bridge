@@ -1,0 +1,219 @@
+# webots-bridge configuration — TOML is the default format for this component.
+# DERIVED FROM etc/config (the flat legacy file) on 2026-08-30, key for key, with its
+# comments carried across. Two deliberate differences, both stated rather than silent:
+#   * `Base.Kinematics` is DROPPED. This bridge drives the differential Shadow only, so the
+#     key is obsolete; the code warns if an old config still sets it to anything else.
+#   * `[DoorControl] Doors` exists in the OLD config.toml but not in etc/config, so it is
+#     carried below as a COMMENT: enabling it changes behaviour (getCapabilities() starts
+#     reporting canActuate=true), and a derived file must not do that on its own.
+# ⚠ Values that DISAGREED between etc/config and the old etc/config.toml are taken from
+#   etc/config, which is the file actually being run: Endpoints.DoorControl 10017 (toml said
+#   10008), FullPose.PublishPeriod 100 (20), Period.Compute 8 (10).
+
+
+[Proxies]
+# This property is used by the clients to connect to IceStorm.
+TopicManager = "IceStorm/TopicManager:default -p 9999"
+# Proxies for publishes interfaces
+FullPoseEstimationPubPrefix = ""
+
+[Endpoints]
+# Endpoints for implements interfaces
+Camera360RGB = "tcp -p 10098"
+CameraRGBDSimple = "tcp -p 10096"
+IMU = "tcp -p 10007"
+Laser = "tcp -p 10003"
+Lidar3D = "tcp -p 11988"
+OmniRobot = "tcp -p 10004"
+VisualElements = "tcp -p 10005"
+Webots2Robocomp = "tcp -p 10006"
+DoorControl = "tcp -p 10017"
+# Endpoints for subscriptions interfaces
+JoystickAdapterTopic = "tcp -p 11025"
+JoystickAdapterPrefix = ""
+
+[Period]
+# Step/actuation rate. This is what bounds how quickly a setSpeedBase command
+# reaches the wheels, so lower it to tighten the control loop.
+#
+# Must be a multiple of the LOADED world's basicTimeStep -- Webots silently rounds UP to one
+# otherwise, so a value below it buys nothing and misreports the rate. The world normally run here is
+# worlds/piso/piso.wbt, which is basicTimeStep 8, so this is honoured exactly. Several other Shadow
+# worlds are still at 16 (a few at 30/33); loading one of those silently halves every rate below.
+#
+# This also sets the IMU sampling rate, which is the fast channel a consumer integrates between
+# slower pose estimates: 8 ms = 125 Hz, against room_concept's IMU thread polling at ~108 Hz.
+Compute = 8
+# Sampling rate for the heavy sensors (lidars, 360 camera, zed). Independent of
+# Period.Compute, so the loop above can be made faster without multiplying point
+# cloud and image processing cost. Clamped up to Period.Compute if set lower.
+# Defaults to Period.Compute when absent.
+Sensors = 32
+Emergency = 500
+
+[Base]
+# ── WHAT THE REAL BASE WILL AND WILL NOT DO ───────────────────────────────────────────────────
+# The base component's OWN config, i.e. the same file the real robot runs. It supplies maxLinSpeed,
+# maxRotSpeed, maxAcceleration, maxDeceleration, wheelRadius and axesLength, and the bridge then
+# enforces them the way the real stack does: the twist is clipped exactly as
+# SVD48VBase/src/specificworker.py:161-173 clips it, and the wheels are ramped exactly where
+# SVD48V.py:129-130 puts the driver's ramp.
+# ★Without this key the simulated base is bound by NOTHING: measured, it would drive 3.3x faster,
+#  turn 5.8x faster and accelerate instantaneously where the real robot needs 1.8 s to reach
+#  0.9 m/s. Every dynamics number measured in sim inherits that gap.
+# ★It must match Base.Kinematics — differential here, so config_diferential. The bridge
+#  cross-checks the file's `baseType` against it and says so if the two disagree.
+ConfigFile = "/home/pbustos/robocomp/components/robocomp-robolab/components/hardware/base/SVD48VBase/etc/config_diferential.toml"
+
+[FullPose]
+# Source of the VELOCITY fields published on FullPoseEstimationPub. The pose fields are supervisor
+# ground truth either way, and OmniRobot is unaffected by this setting.
+#   "wheels"     - wheel-encoder forward kinematics: the exact inverse of the mecanum IK in
+#                  apply_pending_speed_command(), which is what SVD48VBase computes on the real
+#                  robot (inv_m_wheels @ get_speed()). Includes real wheel slip.
+#   "supervisor" - the historical robotNode->getVelocity() ground truth. Kept for A/B measurement.
+# MUST be quoted: ConfigLoader throws on a bare word and aborts startup rather than defaulting.
+VelocitySource = "wheels"
+# Publish period for the wheel-odometry channel, ms. 100 = 10 Hz, matching the real base
+# (SVD48VBase/etc/config_omnidirectional: Period.Compute = 100). The IMU stays at the step rate, and
+# that rate GAP is what a consumer's high-rate injection propagates across. The published velocity is
+# differenced over this whole interval, so it is the exact mean over it, not a sample of one step.
+PublishPeriod = 100
+NominalVelVar = 1e-4
+NominalRotVar = 1e-4
+
+[SensorNoise]
+# Nominal per-sample variances, SI units squared. The simulated gyro and encoders are EXACT and the
+# accelerometer only quantises at 0.001, so a measured covariance here would be ~0 -- and a zero
+# variance reads downstream as infinite confidence, which wrecks any filter consuming it. So publish
+# plausible real-robot figures instead; the real IMU and base controller overwrite them once
+# calibrated. For scale: room_concept measured sigma_v = 3.9e-7 m/sqrt(s) over 24434 parked frames in
+# this simulator, five orders below what its own motion prior is configured with.
+# ── Synthetic sensor error ────────────────────────────────────────────────────
+# This bridge publishes the supervisor's GROUND TRUTH. Measured in room_concept over 24434 parked
+# frames, the odometry that produces has sigma_v = 3.9e-7 m/sqrt(s) -- five to six orders below what
+# every consumer's motion model is configured for. So in simulation the motion prior does no work,
+# and anything tuned against it is tuned against a robot that does not exist. Turn this on to make
+# the simulated sensors behave like sensors.
+#
+# sigma_* are DENSITIES (m/sqrt(s), rad/sqrt(s)): the rate is perturbed by sigma/sqrt(dt) so the
+# accumulated increment has variance sigma^2*dt. One constant therefore means the same thing on the
+# 10 Hz wheel channel and the 125 Hz IMU channel.
+# scale_* are CONSTANT fractional errors held for the whole run (a wheel radius does not change per
+# sample): reported = true * (1 + s).
+#
+# ★ THE WHEELS AND THE GYRO ARE DELIBERATELY DIFFERENT. A gyro does not scrub, so it gets NO scale --
+# only its own noise and a slow bias. A differential base over-reports rotation because it turns BY
+# scrubbing (measured wheel/gyro ratio ~1.05-1.08 on this robot), which is precisely why a gyro
+# heading path is worth having. One shared error model would simulate a gyro that scrubs and argue
+# against a feature that is genuinely valuable on hardware.
+#
+# ⚠ WITH THIS ON THE BRIDGE NO LONGER PUBLISHES GROUND TRUTH, and every consumer sees it -- which is
+# the point, and also why runs with it on are not comparable to runs without. It is announced at
+# startup as "[SensorNoise] ON".
+# Suggested starting values (encoder-plausible; scale_w is the measured scrubbing figure):
+#   WheelSigmaV = 0.006   WheelSigmaW = 0.010   WheelScaleV = 0.0   WheelScaleW = 0.06
+#   GyroSigma   = 0.002   GyroBias    = 0.0
+Enabled = true
+# ★ SLIP COEFFICIENTS per unit speed since 2026-08-29, NOT flat densities. sigma(v) =
+#   sqrt(Floor^2 + (WheelSigmaV * |v|)^2). An encoder at rest emits no counts, so it reports zero
+#   with near-certainty; a flat density injects motion into a parked robot and the consumer
+#   integrates it. Measured on P3Bot: parked drift 3.49 -> 0.122 mm/cycle.
+# ⚠ The FLOORS are carried over from P3Bot and are NOT measured on Shadow. Shadow's encoders and
+#   its differential base are not P3Bot's mecanum one. Re-measure with the robot demonstrably
+#   parked (the zero-command residual) before trusting them; they are a starting point, not a
+#   result. The same caution applies to reading WheelSigmaV/W as slip rather than as the flat
+#   density they used to be.
+WheelSigmaVFloor = 0.0005   # m/sqrt(s)   — sub-count residual at standstill
+WheelSigmaWFloor = 0.0010   # rad/sqrt(s) — same, yaw
+WheelSigmaV = 0.006   # m/sqrt(s)   encoder velocity noise: ~19 mm/s of jitter at 10 Hz
+WheelSigmaW = 0.010   # rad/sqrt(s) wheel-derived yaw-rate noise
+WheelScaleV = 0.10    # ARM 4 injection: reported forward velocity = true x 1.10, so true k_v = 1/1.10
+                      # = 0.9091. A LARGE initial error, ~4x Shadow's native -0.84%. Noise is left at the
+                      # baseline values above ON PURPOSE — unlike arm 2, which zeroed them to test bias
+                      # recovery in isolation. This arm must be comparable to arm 3, whose runs had the
+                      # full noise model live, so the ONLY difference from etc/config.toml is this line.
+                      # Baseline 0.0 restored from etc/config.toml.pre-arm2 (identical to the live file).
+# ★ ZEROED 2026-08-17 after a CLOSURE TEST, and the reason is the opposite of what it first looked
+# like. A 4-turn pivot (4.0479 turns by the posterior, net travel 0.040 m, closing to within 17 deg
+# on 1440 -- the test resolves to ~1.2%) integrated as:
+#     truth 25.1327 rad | gyro 25.4197 (1.0114) | wheel 30.9178 (1.2302)
+# The gyro is accurate to within the test's own resolution. The wheel over-reports 23%, and with the
+# +0.06 injected here backed out its INTRINSIC error is 1.16.
+#
+# ⚠ THAT IS NOT A CALIBRATION BUG. Checked against Shadow.proto -- the robot piso.wbt actually
+# loads, not Shadow.proto -- the drive-wheel anchors are at x = +-0.259 and the wheel radius is 0.1,
+# which match half_track_ = 0.259 and wheel_radius_ = 0.100 exactly. The constants are right.
+#
+# It is SCRUBBING, and its size tracks how much of the motion is rotation, exactly as it should:
+#     mixed tour   wheel/gyro 1.1427 measured  ->  intrinsic 1.078   (the 1.05-1.08 the code expects)
+#     pure pivot   wheel/gyro 1.2302           ->  intrinsic 1.16    (all rotation, the worst case)
+# So the simulator ALREADY reproduces the scrubbing this knob was added to model, and setting it
+# non-zero duplicates a real effect the physics is generating on its own.
+#
+# Leave at 0. If a future world's base does NOT scrub (an idealised wheel contact, say), a value here
+# would then be modelling something absent rather than doubling something present -- so check the
+# wheel/gyro ratio on a pivot before re-introducing it.
+WheelScaleW = 0.0
+GyroSigma = 0.002   # rad/sqrt(s) — 3x quieter than the wheels, and with NO scale
+GyroBias = 0.0     # a real gyro drifts; left at 0 until there is a figure to use
+
+[IMU]
+NominalGyroVar = 1e-5
+NominalAccVar = 1e-3
+
+[Camera.ZED]
+points3D = false
+
+[Component.Debug]
+Verbose = true
+
+[omnirobot.ThreadPool]
+# Give OmniRobot its own dispatch thread. Without this all adapters share the
+# single default server thread pool, so a setSpeedBase/getBaseState call queues
+# behind whatever lidar or camera call is being marshalled at that instant.
+Size = "2"
+SizeMax = "4"
+
+[Ice.ThreadPool.Server]
+# Shared pool for the remaining adapters: still enough that a large Lidar3D or
+# Camera360 payload does not serialise the small IMU/VisualElements calls.
+Size = "4"
+SizeMax = "8"
+
+[Ice.Warn]
+Connections = "0"
+
+[Ice.Trace]
+Network = "0"
+Protocol = "0"
+
+[Ice]
+MessageSizeMax = "20004800"
+
+[LidarChannels.helios]
+# ---------------------------------------------------------------------------------------------
+# LIDAR CHANNEL WINDOW — which of the layers Webots generates the real device actually has.
+#
+# Webots spreads numberOfLayers SYMMETRICALLY about the device horizon and IGNORES tiltAngle
+# (measured 2026-08-29: only the untilted reconstruction puts 100% of a recorded frame inside the
+# room and the floor at z = 0). An RS-Helios H32F70 is not symmetric — its 32 channels span
+# -55..+15 deg — so Shadow.proto generates a symmetric 110 deg fan (2 x 55) with
+# 50 layers, which CONTAINS every real channel elevation, and this window drops the 18 layers
+# above +15 that the unit does not have. 50 layers over 110 deg = 2.2449 deg/layer; the window
+# keeps layers 18..49 = 32 channels at +14.6 .. -55.0 deg.
+#
+# This is a statement about the DEVICE, not a tuning knob: it is applied to elevations that were
+# reconstructed correctly, so a dropped layer changes nothing about the layers that remain.
+# Delete both keys to publish every layer. Elevations are in the DEVICE frame, + is up — the
+# mount (inverted on Shadow) lives in the RT edge, not here.
+ElevMinDeg = -55.0
+ElevMaxDeg = 15.0
+
+[DoorControl]
+# Which doors this provider advertises over DoorControl: the hinge DEFs of the loaded world.
+# Absent => it advertises none and getCapabilities() reports canActuate=false, which is the
+# honest answer for a world whose doors are scenery. etc/config does NOT set this, so neither
+# does this file; the old config.toml did. Uncomment only if the loaded world really has
+# actuable hinges by these DEF names.
+# Doors = ["DOOR_0", "DOOR_1"]
