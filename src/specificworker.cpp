@@ -274,9 +274,14 @@ void SpecificWorker::compute()
     // step rate is faster than sensor_period the extra passes would reprocess the same
     // point clouds and images. Skip them.
     const double sim_now_ms = robot != nullptr ? robot->getTime() * 1000.0 : 0.0;
-    const bool new_sensor_sample = sim_now_ms >= next_sensor_sample_ms;
+    // Fire on a NEW ACQUISITION INSTANT, not on elapsed time — see last_sensor_acq_ms_ in the header.
+    // Same grid the stamp is back-dated to, so the sample we process is the one just refreshed.
+    const double sensor_acq_ms = acquisition_sim_ms(sim_now_ms, sensor_period);
+    // != rather than >: a simulation RESET sends getTime() backwards, and a ">" test would then wait
+    // for the clock to climb back past the old value — heavy sensors silently dead until it did.
+    const bool new_sensor_sample = sensor_acq_ms != last_sensor_acq_ms_;
     if(new_sensor_sample)
-        next_sensor_sample_ms = sim_now_ms + sensor_period;
+        last_sensor_acq_ms_ = sensor_acq_ms;
 
     // Getting the data from simulation. The robot pose/speed feeds the control loop,
     // so it is refreshed every step regardless of the sensor rate.

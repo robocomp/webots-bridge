@@ -632,7 +632,19 @@ private:
     // getting that interval wrong would make the same sigma mean different drift on different
     // channels, which is exactly the rate-dependence the density form exists to remove.
     int imu_step_period_ms_ = 0;
-    double next_sensor_sample_ms = 0.0;   // next simulation time a sample is due
+    // ★ The ACQUISITION INSTANT of the last sample processed, on the sim clock — not "when the next
+    // one is due". Those are not the same schedule, and the difference was pure latency on every
+    // sensor stream. Webots refreshes a device on multiples of its sampling period, which is exactly
+    // what acquisition_sim_ms() computes and what every payload's stamp is back-dated to. The old
+    // trigger, `sim_now >= last_trigger + sensor_period`, free-ran against that grid: it fired one
+    // sensor period after the last FIRING, so its phase relative to the refreshes was arbitrary and
+    // drifted. Reading at a random phase means the sample in hand is uniformly 0..one period old —
+    // measured 2026-09-10 at the Ice hand-over: mean age 27 ms, p10 11, p90 42, i.e. a full 32 ms
+    // sensor period of spread, and the p10 proves a frame IS nearly fresh when the phase happens to
+    // line up. Triggering on a NEW acquisition instant instead reads within one 8 ms sim step of the
+    // refresh, always, and cannot process the same sample twice — the same dedup-by-source-stamp
+    // that lidar3d_dds and ricoh_omni_dds now use downstream, applied at the origin of the chain.
+    double last_sensor_acq_ms_ = -1.0;   // sim-clock acquisition instant of the last sample processed
 
     struct PARAMS
     {
