@@ -49,6 +49,12 @@ Compute = 8
 # cloud and image processing cost. Clamped up to Period.Compute if set lower.
 # Defaults to Period.Compute when absent.
 Sensors = 32
+# The LIDARS' own rate. A real Helios and a real Bpearl both scan at 20 Hz (50 ms); sampling them at
+# the camera period published ~30 Hz clouds in simulation, a sim2real gap in exactly the number a
+# motion model divides by. Snapped at startup to a multiple of Period.Compute, because Webots only
+# refreshes a device on step multiples — on an 8 ms step this applies 48 ms (20.8 Hz); 56 would be
+# 17.9 Hz, a worse approximation of 20. Absent, the lidars follow Period.Sensors as before.
+Lidar = 50
 Emergency = 500
 
 [Base]
@@ -170,6 +176,34 @@ Verbose = true
 Size = "2"
 SizeMax = "4"
 
+# ── Per-adapter pools for the LONG-POLLING sensor interfaces ──────────────────────────────────
+# Each interface gets its own object adapter (generated/main.cpp: "lidar3d", "camera360rgb",
+# "camerargbdsimple", ...), so each can have its own dispatch pool — the isolation OmniRobot above
+# already relies on, extended to the streams that now BLOCK.
+#
+# Since the sensor servants wait on the DoubleBuffer for the next frame instead of returning the
+# last one, every subscribed driver holds a dispatch thread for up to one source period. Blocked
+# threads cost a thread, not CPU (it is a condition-variable wait), but out of the SHARED pool they
+# would crowd out the interfaces that do not block: five permanent waiters (helios, bpearl, ricoh,
+# zed, and any second puller) against Ice.ThreadPool.Server's initial size of 4 leaves nothing for
+# Laser, VisualElements, DoorControl or Webots2Robocomp until the pool grows. Sized per adapter,
+# a blocked sensor call cannot starve anything but its own interface.
+[lidar3d.ThreadPool]
+Size = "3"       # helios + bpearl, one spare
+SizeMax = "6"
+
+[camera360rgb.ThreadPool]
+Size = "2"
+SizeMax = "4"
+
+[camerargbdsimple.ThreadPool]
+Size = "2"       # getAll blocks; the partial getters share this pool
+SizeMax = "4"
+
+[imu.ThreadPool]
+Size = "2"       # imu_dds polls this at ~17 ms; it must never queue behind a blocking sensor call
+SizeMax = "4"
+
 [Ice.ThreadPool.Server]
 # Shared pool for the remaining adapters: still enough that a large Lidar3D or
 # Camera360 payload does not serialise the small IMU/VisualElements calls.
@@ -211,4 +245,17 @@ ElevMaxDeg = 15.0
 # honest answer for a world whose doors are scenery. etc/config does NOT set this, so neither
 # does this file; the old config.toml did. Uncomment only if the loaded world really has
 # actuable hinges by these DEF names.
-# Doors = ["DOOR_0", "DOOR_1"]
+# ENABLED 2026-09-09 after checking the loaded world rather than trusting the names: piso.wbt has
+# `DEF DOOR_0 Door` and `DEF DOOR_1 Door` (lines 833/848), and the Door PROTO exposes the `position`
+# field setDoorAperture() writes — so getFromDef() resolves and the aperture actually moves. Both are
+# currently at position ~-3.9e-05, i.e. shut.
+# ⚠This flips getCapabilities() to canActuate = true, which is what lets a caller OFFER the
+#   open-a-door affordance. That is a behaviour change, not a comment change.
+Doors = ["DOOR_0", "DOOR_1"]
+
+# How fast a door swings, rad/s. It used to TELEPORT: one setSFFloat and the leaf was at 90 degrees
+# between two frames. Nothing in Webots forbids that, but no hinge does it and no camera could track
+# it — and the reason to open a door in this scene is to find out whether the robot NOTICES. 1.2 rad/s
+# is ~1.3 s for a 90 degree swing. The step is rate x the world's own timestep, so the swing takes the
+# same wall-clock time whatever speed the simulation is run at.
+SwingRate = 1.2

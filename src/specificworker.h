@@ -644,7 +644,9 @@ private:
     // line up. Triggering on a NEW acquisition instant instead reads within one 8 ms sim step of the
     // refresh, always, and cannot process the same sample twice — the same dedup-by-source-stamp
     // that lidar3d_dds and ricoh_omni_dds now use downstream, applied at the origin of the chain.
-    double last_sensor_acq_ms_ = -1.0;   // sim-clock acquisition instant of the last sample processed
+    double last_sensor_acq_ms_ = -1.0;   // sim-clock acquisition instant of the last CAMERA sample processed
+    double last_lidar_acq_ms_  = -1.0;   // ... and of the last LIDAR one: the two groups run on different grids
+    int    lidar_period_ = 0;            // ms; the real Helios/Bpearl 20 Hz, snapped to a step multiple
 
     struct PARAMS
     {

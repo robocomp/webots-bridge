@@ -178,8 +178,30 @@ void SpecificWorker::initialize()
                       << compute_period << "); clamping to Period.Compute." << std::endl;
             sensor_period = compute_period;
         }
+        // ★ THE LIDARS RUN AT THEIR REAL RATE, not the cameras'. A Helios and a Bpearl both scan at
+        // 20 Hz; sampling them at the camera period made the simulation publish ~30 Hz clouds, which
+        // is a sim2real gap in the one number every downstream motion model divides by. Absent from
+        // the config it follows Period.Sensors, i.e. the historical behaviour.
+        //
+        // Webots only refreshes a device on multiples of basicTimeStep, so a requested period that is
+        // not one gets rounded and the true rate is then NOT the configured one. Snap it here, to the
+        // NEAREST multiple, and say what was actually applied: on an 8 ms step the real 50 ms becomes
+        // 48 (20.8 Hz, 4% fast) — 56 would be 17.9 Hz, which is 11% slow and the worse of the two.
+        lidar_period_ = sensor_period;
+        try { lidar_period_ = configLoader.get<int>("Period.Lidar"); } catch(...) {}
+        if(lidar_period_ < compute_period)
+            lidar_period_ = compute_period;
+        if(const int snapped = ((lidar_period_ + compute_period / 2) / compute_period) * compute_period;
+           snapped != lidar_period_)
+        {
+            std::cout << "Period.Lidar (" << lidar_period_ << ") is not a multiple of the step ("
+                      << compute_period << "); applying " << snapped << " ms ("
+                      << 1000.0 / snapped << " Hz) — Webots samples on step multiples only." << std::endl;
+            lidar_period_ = snapped;
+        }
         std::cout << "Compute period: " << compute_period << " ms, sensor period: "
-                  << sensor_period << " ms" << std::endl;
+                  << sensor_period << " ms, lidar period: " << lidar_period_ << " ms ("
+                  << 1000.0 / lidar_period_ << " Hz)" << std::endl;
 
         // pause variable
         last_read.store(std::chrono::high_resolution_clock::now());
@@ -213,8 +235,8 @@ void SpecificWorker::initialize()
         // Activa los componentes en la simulación si los detecta.
         // Heavy sensors run at sensor_period; the IMU and wheel encoders are cheap and
         // feed the control loop, so they stay at the step rate.
-        if(lidar_helios) lidar_helios->enable(sensor_period);
-        if(lidar_pearl) lidar_pearl->enable(sensor_period);
+        if(lidar_helios) lidar_helios->enable(lidar_period_);
+        if(lidar_pearl) lidar_pearl->enable(lidar_period_);
         if(camera) camera->enable(sensor_period);
         if(range_finder) range_finder->enable(sensor_period);
         if(camera360_1 && camera360_2){
@@ -276,20 +298,36 @@ void SpecificWorker::compute()
     const double sim_now_ms = robot != nullptr ? robot->getTime() * 1000.0 : 0.0;
     // Fire on a NEW ACQUISITION INSTANT, not on elapsed time — see last_sensor_acq_ms_ in the header.
     // Same grid the stamp is back-dated to, so the sample we process is the one just refreshed.
-    const double sensor_acq_ms = acquisition_sim_ms(sim_now_ms, sensor_period);
+    // One trigger PER DEVICE GROUP, because they no longer share a period: the lidars refresh on
+    // their own 20 Hz grid and the cameras on theirs. Firing both off one grid would read a lidar
+    // that has not refreshed (and stamp it as if it had) or miss the instant it did.
     // != rather than >: a simulation RESET sends getTime() backwards, and a ">" test would then wait
     // for the clock to climb back past the old value — heavy sensors silently dead until it did.
+    const double sensor_acq_ms = acquisition_sim_ms(sim_now_ms, sensor_period);
+    const double lidar_acq_ms  = acquisition_sim_ms(sim_now_ms, lidar_period_);
     const bool new_sensor_sample = sensor_acq_ms != last_sensor_acq_ms_;
+    const bool new_lidar_sample  = lidar_acq_ms  != last_lidar_acq_ms_;
     if(new_sensor_sample)
         last_sensor_acq_ms_ = sensor_acq_ms;
+    if(new_lidar_sample)
+        last_lidar_acq_ms_ = lidar_acq_ms;
 
     // Getting the data from simulation. The robot pose/speed feeds the control loop,
     // so it is refreshed every step regardless of the sensor rate.
     if(robot) receiving_robotSpeed(robot, now);
-    if(new_sensor_sample)
+    // ★ BEFORE the heavy sensors, not after. The IMU sample is stamped with `now`, taken at the top
+    // of this function, but it used to be read below the lidar/camera block — so on every cycle that
+    // carries a heavy sample it was stored several ms after the time it claims, and the error landed
+    // on exactly the cycles where it is hardest to notice. It reads its own Webots devices and shares
+    // nothing with the block below, so the order is free.
+    update_imu_data(now);
+    if(new_lidar_sample)
     {
         if(lidar_helios) receiving_lidarData("helios", lidar_helios, double_buffer_helios,  helios_delay_queue, now);
         if(lidar_pearl) receiving_lidarData("bpearl", lidar_pearl, double_buffer_pearl, pearl_delay_queue, now);
+    }
+    if(new_sensor_sample)
+    {
         //if(camera) receiving_cameraRGBData(camera, now);
         //if(range_finder) receiving_depthImageData(range_finder, now);
         if(camera360_1 and camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
@@ -298,7 +336,6 @@ void SpecificWorker::compute()
 
     // Refresh the snapshots served by the RPC servants, then drain any work they
     // queued. Everything that talks to Webots happens on this thread.
-    update_imu_data(now);
     update_object_poses();
     update_door_control();
     run_webots_tasks();
@@ -513,7 +550,19 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
 double SpecificWorker::acquisition_sim_ms(double sim_now_ms, int device_period_ms)
 {
     if (device_period_ms <= 0) return sim_now_ms;
-    return std::floor(sim_now_ms / device_period_ms) * device_period_ms;
+    // ★ ROUND TO THE MILLISECOND FIRST. getTime() returns seconds as a double, so sim_now_ms is
+    // getTime()*1000 and lands ONE ULP LOW on exactly the instants that matter: at sim second 32.032
+    // the product is 32031.999999999996, and floor(that/32)*32 gives 32000, not 32032. A one-ulp
+    // deficit therefore moves the answer by a WHOLE PERIOD, so the refresh instant is not recognised
+    // and the sample is read a step late (its stamp is still correct, because the next cycle floors
+    // correctly — which is why no stamp-based test can see this; only the lag tail can).
+    // Reproduced offline over 400k steps of an 8 ms grid: 0.7% of refresh instants are missed if
+    // Webots computes time as k*step/1000, and 39.5% if it accumulates += 0.008 — and which of the
+    // two it does is not ours to know. Sim time is always an integer number of ms here (basicTimeStep
+    // is 8 in piso.wbt, 16/30/33 in the other worlds), so rounding to the nearest ms is exact, and on
+    // a hypothetical fractional step it quantises by less than one step and stays harmless.
+    const double ms = static_cast<double>(std::llround(sim_now_ms));
+    return std::floor(ms / device_period_ms) * device_period_ms;
 }
 
 // The same instant on the wall clock. The sample is (sim_now - t_acq) of SIMULATION time old, and the
@@ -1078,7 +1127,7 @@ void SpecificWorker::receiving_lidarData(std::string name, webots::Lidar* _lidar
     // `period` likewise reported fps.get_period(), the LOOP period, which left no way to even infer
     // the staleness; it is the device's sampling period.
     const double lidar_sim_now_ms = robot != nullptr ? robot->getTime() * 1000.0 : 0.0;
-    newLidar3dData.timestamp    = acquisition_wall_ms(timestamp, lidar_sim_now_ms, sensor_period);
+    newLidar3dData.timestamp    = acquisition_wall_ms(timestamp, lidar_sim_now_ms, lidar_period_);
     newLidar3dData.simTimestamp = static_cast<long>(acquisition_sim_ms(lidar_sim_now_ms, sensor_period));
     newLidar3dData.simulated    = true;
     newLidar3dData.period = static_cast<float>(sensor_period);
@@ -1315,6 +1364,44 @@ void SpecificWorker::receiving_cameraRGBData(webots::Camera* _camera, long times
 
 #pragma endregion Data-Catching Methods
 
+// ── Long-poll helpers for the streaming servants ──────────────────────────────────────────────
+// WHY THESE BLOCK. These servants used to answer with whatever the buffer held (get_idemp), so a
+// client asking on its own clock got an answer aged by however long ago the frame landed — half a
+// poll period on average, and that was the largest remaining term in every stream's end-to-end lag
+// (measured 2026-09-11: lidar 5.8 ms of 8.6, zed 8.1 of 17.0). DoubleBuffer::get() already waits on
+// the condition variable that put() notifies, so waiting for the NEXT frame instead of returning
+// the LAST one collapses that term to the transfer itself, and costs the client nothing: it was
+// going to ask again anyway, and now it asks once and sleeps instead of spinning.
+//
+// It also takes the wasted pulls out of this process: every duplicate pull used to copy the whole
+// payload out of the buffer and marshal it, on the bridge's own CPU, to be thrown away by the
+// client's dedup.
+//
+// TIMEOUT MUST NOT THROW. get() throws std::runtime_error on timeout, which crosses the wire as an
+// unhelpful Ice::UnknownException; a paused simulator would look like a broken interface. Return an
+// EMPTY payload instead — "nothing new within the window" — which every driver already treats as
+// "no frame this cycle". Callers must therefore not read an empty reply as an error.
+//
+// NOTE ON MULTIPLE CLIENTS. get() clears the buffer's `empty` flag, but it waits under a SHARED
+// lock, so two clients already blocked when a frame lands both receive it. What a consuming get()
+// costs is the client that asks LATE — after another has taken the frame — which now waits for the
+// next one rather than being handed a stale copy. For a 30 Hz stream that is a sub-33 ms wait, and
+// it is the behaviour a puller wants; it is only wrong for a caller that wants "whatever you have,
+// right now", and no such caller exists in this fleet today.
+template <class Buffer>
+static auto take_next_or_empty(Buffer &buf)
+{
+    try { return buf.get(); }
+    catch (const std::exception &) { return decltype(buf.get()){}; }   // timed out: nothing new
+}
+
+template <class Buffer, class Fn>
+static auto take_next_or_empty_with(Buffer &buf, Fn &&projection)
+{
+    try { return buf.get_idemp_with(projection); }
+    catch (const std::exception &) { return decltype(buf.get_idemp_with(projection)){}; }
+}
+
 #pragma region Camera360
 
 RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy, int sx, int sy, int roiwidth, int roiheight)
@@ -1326,7 +1413,7 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
             return camera_queue.back();
     }
 
-    return double_buffer_360.get_idemp();
+    return take_next_or_empty(double_buffer_360);
 }
 
 #pragma endregion Camera360
@@ -1336,7 +1423,7 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
 RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    return double_buffer_zed.get_idemp();
+    return take_next_or_empty(double_buffer_zed);
 }
 
 // The partial getters project out the one member they return: copying the whole
@@ -1344,19 +1431,19 @@ RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::str
 RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    return double_buffer_zed.get_idemp_with([](const auto &rgbd) { return rgbd.depth; });
+    return take_next_or_empty_with(double_buffer_zed, [](const auto &rgbd) { return rgbd.depth; });
 }
 
 RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    return double_buffer_zed.get_idemp_with([](const auto &rgbd) { return rgbd.image; });
+    return take_next_or_empty_with(double_buffer_zed, [](const auto &rgbd) { return rgbd.image; });
 }
 
 RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
-    return double_buffer_zed.get_idemp_with([](const auto &rgbd) { return rgbd.points; });
+    return take_next_or_empty_with(double_buffer_zed, [](const auto &rgbd) { return rgbd.points; });
 }
 
 #pragma endregion CamerRGBDSimple
@@ -1394,14 +1481,14 @@ RoboCompLidar3D::TData SpecificWorker::Lidar3D_getLidarData(std::string name, fl
         if(pars.delay && helios_delay_queue.full())
             return helios_delay_queue.back();
         else
-            return double_buffer_helios.get_idemp();
+            return take_next_or_empty(double_buffer_helios);
     }
     else if(name == "bpearl")
     {
         if(pars.delay && pearl_delay_queue.full())
             return pearl_delay_queue.back();
         else
-            return double_buffer_pearl.get_idemp();
+            return take_next_or_empty(double_buffer_pearl);
     }
     else
     {

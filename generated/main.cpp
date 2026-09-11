@@ -264,10 +264,38 @@ public:
 Ice::InitializationData Webots2Robocomp::getInitializationDataIce(){
         Ice::InitializationData initData;
         initData.properties = Ice::createProperties();
-        initData.properties->setProperty("Ice.Warn.Connections", this->configLoader.get<std::string>("Ice.Warn.Connections"));
-        initData.properties->setProperty("Ice.Trace.Network", this->configLoader.get<std::string>("Ice.Trace.Network"));
-        initData.properties->setProperty("Ice.Trace.Protocol", this->configLoader.get<std::string>("Ice.Trace.Protocol"));
-        initData.properties->setProperty("Ice.MessageSizeMax", this->configLoader.get<std::string>("Ice.MessageSizeMax"));
+
+        // Forward EVERY Ice property the config declares, not a fixed list of four.
+        //
+        // Until 2026-09-11 this function copied exactly Ice.Warn.Connections, Ice.Trace.Network,
+        // Ice.Trace.Protocol and Ice.MessageSizeMax, and nothing else. Every other Ice setting a
+        // component config declared was therefore INERT: it was loaded, printed by printConfig(),
+        // and never reached the communicator. A config block that is read and ignored looks exactly
+        // like one that works, so this cost real time to find — in webots-bridge the config had
+        // carried an [omnirobot.ThreadPool] block for months, with a comment explaining that it
+        // gave base commands their own dispatch thread so they could not queue behind a camera.
+        // They had always shared the default pool. It only became visible when some servants began
+        // to block: four blocking calls took the single pool and the whole fleet serialised, an
+        // untouched IMU stream falling from 113 Hz to 29 Hz while its data stayed 5 ms fresh.
+        //
+        // These properties are only read when the communicator is created, which is why this must
+        // happen here and cannot be moved into SpecificWorker.
+        //
+        // "Ice.*" covers the run time's own settings; "*.ThreadPool.*" covers the per-object-adapter
+        // pools, which are named after the adapter (see the implement<>() calls below) and so cannot
+        // be listed in advance. Anything else in the config is the component's own business and is
+        // deliberately not forwarded. A value that will not convert to a string is skipped rather
+        // than aborting startup.
+        for (const auto &key_view : this->configLoader.getKeys())
+        {
+            const std::string key{key_view};
+            const bool is_ice_runtime  = key.rfind("Ice.", 0) == 0;
+            const bool is_adapter_pool = key.find(".ThreadPool.") != std::string::npos;
+            if (not (is_ice_runtime or is_adapter_pool))
+                continue;
+            try { initData.properties->setProperty(key, this->configLoader.get<std::string>(key)); }
+            catch (...) { /* not string-convertible: leave Ice's default for this one */ }
+        }
 		return initData;
 }
 
