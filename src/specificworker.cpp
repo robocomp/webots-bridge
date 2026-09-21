@@ -509,10 +509,18 @@ void SpecificWorker::receiving_camera360Data(webots::Camera* _camera1, webots::C
     if (webotsImageData1 == nullptr or webotsImageData2 == nullptr) return;
     cv::Mat img_1 = cv::Mat(cv::Size(_camera1->getWidth(), _camera1->getHeight()), CV_8UC4);
     cv::Mat img_2 = cv::Mat(cv::Size(_camera2->getWidth(), _camera2->getHeight()), CV_8UC4);
+    // BGRA2RGB, not RGBA2RGB. Webots' Camera::getImage() hands back BGRA -- which is why the
+    // single-camera path above names its buffer imageMatBGRA and converts the same way. RGBA2RGB
+    // only DROPS the alpha byte, it does not reorder, so this path was shipping B,G,R bytes under
+    // an RGB label. Every consumer then rendered red and blue swapped: measured on the live stream,
+    // a person wearing blue in Webots arrived as bytes [107 62 40] and drew as orange, and the
+    // reddish floor drew as blue-purple. It went unnoticed for so long because the rest of the
+    // scene -- grass, grey walls -- is green or neutral, and green is the middle byte in both
+    // orders, so nothing looked obviously wrong.
     img_1.data = (uchar *)webotsImageData1;
-    cv::cvtColor(img_1, img_1, cv::COLOR_RGBA2RGB);
+    cv::cvtColor(img_1, img_1, cv::COLOR_BGRA2RGB);
     img_2.data = (uchar *)webotsImageData2;
-    cv::cvtColor(img_2, img_2, cv::COLOR_RGBA2RGB);
+    cv::cvtColor(img_2, img_2, cv::COLOR_BGRA2RGB);
     // Plain [cam1 | cam2] concat puts the SEAM between the two 180° captures at the panorama centre —
     // i.e. cam1's own centre (its optical axis) sits a quarter-width off-centre, not in the middle of
     // the final image. Slide the whole composite right by half a camera's width (a circular roll) so
