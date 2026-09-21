@@ -18,6 +18,7 @@
  */
 #include "specificworker.h"
 #include <webots/Field.hpp>   // tiltAngle read off the scene tree
+#include <algorithm>         // std::clamp, for the drone's stick normalisation and flight limits
 #include <charconv>          // the base config is parsed locale-independently -- see read_flat_config
 #include <fstream>
 #include <limits>
@@ -93,6 +94,18 @@ void SpecificWorker::initialize()
         // Absent from the config it advertises none, and getCapabilities() reports canActuate=false —
         // which is the honest answer for a world whose doors are scenery, and is what stops a caller
         // offering an open-the-door affordance it could never carry out.
+        try { door_swing_rate = static_cast<float>(configLoader.get<double>("DoorControl.SwingRate")); }
+        catch (...) { /* default 1.2 rad/s */ }
+        // [DroneControl]: every key optional, defaults in the header fly it sensibly with no config.
+        try { drone_def = configLoader.get<std::string>("DroneControl.Def"); } catch(...) {}
+        try { drone_linear_speed = configLoader.get<double>("DroneControl.LinearSpeed"); } catch(...) {}
+        try { drone_climb_speed  = configLoader.get<double>("DroneControl.ClimbSpeed"); } catch(...) {}
+        try { drone_yaw_speed    = configLoader.get<double>("DroneControl.YawSpeed"); } catch(...) {}
+        try { drone_max_radius   = configLoader.get<double>("DroneControl.MaxRadius"); } catch(...) {}
+        try { drone_min_height   = configLoader.get<double>("DroneControl.MinHeight"); } catch(...) {}
+        try { drone_max_height   = configLoader.get<double>("DroneControl.MaxHeight"); } catch(...) {}
+        try { drone_advance_full_scale = configLoader.get<double>("DroneControl.AdvanceAxisFullScale"); } catch(...) {}
+
         try { door_control_defs = configLoader.get<std::vector<std::string>>("DoorControl.Doors"); }
         catch(...) {}
         if (not door_control_defs.empty())
@@ -338,6 +351,8 @@ void SpecificWorker::compute()
     // queued. Everything that talks to Webots happens on this thread.
     update_object_poses();
     update_door_control();
+    update_door_swing();   // walk any in-flight door toward its target (no teleport)
+    update_drone_control();// fly the drone, when the joystick has been switched to it
     run_webots_tasks();
 
     // Push any speed command received over RPC since the last step.
@@ -2119,13 +2134,40 @@ RoboCompWebots2Robocomp::ObjectPose SpecificWorker::Webots2Robocomp_getObjectPos
 void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData data)
 {
     // Declaration of the structure to be filled
-    float side=0, adv=0, rot=0;
-    /*
-    // Iterate through the std::list of buttons in the data structure
-    for (RoboCompJoystickAdapter::ButtonParams button : data.buttons) {
-        // Currently does nothing with the buttons
+    float side=0, adv=0, rot=0, climb=0;
+
+    // ── Which vehicle are the sticks addressing? ──────────────────────────────────────────────
+    // The publisher reports every button's state on EVERY message while it is held down, so a
+    // level test would toggle the mode dozens of times per press. The toggle is therefore on the
+    // rising EDGE, and the previous state is remembered here rather than in the publisher --
+    // which is the right place for it: the publisher does not know what the button means, and
+    // another subscriber may want the same button to mean something else.
+    bool mode_button = false;
+    for (const RoboCompJoystickAdapter::ButtonParams &button : data.buttons)
+        if (button.name == "drone_mode")
+            mode_button = button.step != 0;
+
+    bool entered_drone_mode = false, mode_now = false;
+    {
+        const std::lock_guard<std::mutex> lock(drone_mutex);
+        if (mode_button and not drone_mode_button_down)
+        {
+            drone_mode = not drone_mode;
+            entered_drone_mode = drone_mode;
+            std::cout << "[ JoystickAdapter ] drone_mode -> " << (drone_mode ? "DRONE" : "BASE")
+                      << ": the sticks now " << (drone_mode ? "fly the drone" : "drive the robot")
+                      << std::endl;
+        }
+        drone_mode_button_down = mode_button;
+        mode_now = drone_mode;
     }
-    */
+    // ★ STOP THE BASE ON THE WAY IN, once. The base driver holds the last commanded twist as a
+    //   standing target and keeps ramping toward it between messages (see
+    //   apply_pending_speed_command), so simply not sending it anything would leave the robot
+    //   rolling at whatever it was doing when the button was pressed -- carrying the drone with it,
+    //   since the drone is parented to the robot.
+    if (entered_drone_mode)
+        OmniRobot_setSpeedBase(0, 0, 0);
 
     // Iterate through the std::list of axes in the data structure
     for (RoboCompJoystickAdapter::AxisParams axis : data.axes)
@@ -2137,6 +2179,8 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
             adv = axis.value;
         else if (axis.name == "side")
             side = axis.value;
+        else if (axis.name == "altitude")
+            climb = axis.value;          // drone only; the base has nowhere to put it
         else
             std::cout << "[ JoystickAdapter ] Warning: Using a non-defined axes (" << axis.name << ")." << std::endl;
     }
@@ -2162,8 +2206,123 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
                       << std::endl;
         }
     }
-    if(pars.do_joystick)
-        OmniRobot_setSpeedBase(side, adv, rot);
+    if(not pars.do_joystick)
+        return;
+
+    if (mode_now)
+    {
+        // Hand the sticks to the drone. Stored, not applied: everything that touches Webots runs
+        // on the thread that calls robot->step(), and update_drone_control() picks this up there.
+        // Normalised to [-1, 1] so the integrator's speeds are in real units (m/s, rad/s) rather
+        // than in whatever the joystick file happens to scale each axis to.
+        const auto unit = [](float v) { return std::clamp(v, -1.f, 1.f); };
+        const std::lock_guard<std::mutex> lock(drone_mutex);
+        drone_cmd.forward = unit(adv / static_cast<float>(drone_advance_full_scale));
+        // ★ NEGATED, and traced rather than guessed. etc/config_shadow declares `side` inverted, so
+        //   pushing the stick RIGHT (SDL reports +1) arrives here as -1. The drone's lateral axis is
+        //   the robot's +x, which is its right, so stick-right must come out positive or the drone
+        //   strafes the wrong way. The base's own sign convention is a separate question and is left
+        //   exactly as it was -- this only settles what the DRONE does with the same number.
+        drone_cmd.lateral = unit(-side);
+        // Not negated, and for the same reason: `rotate` is inverted too, so stick-right arrives
+        // negative, and negative about the robot's +z is clockwise -- stick-right yaws right.
+        drone_cmd.yaw     = unit(rot);
+        drone_cmd.climb   = unit(climb);
+        return;
+    }
+    OmniRobot_setSpeedBase(side, adv, rot);
+}
+
+// Fly the drone one step. Supervisor thread, once per compute() cycle.
+//
+// Integrates the stick as a velocity and WRITES the resulting pose: the node has no physics, so
+// there is nothing else that could move it. The pose is in the robot's frame, since the node lives
+// in Shadow's extensionSlot -- forward is the robot's +y (the direction the ZED and the front
+// 360 lens face), right is +x, up is +z.
+void SpecificWorker::update_drone_control()
+{
+    // Resolve once. A null is cached too: whether this world contains the drone does not change
+    // while it is loaded, and beta_empty.wbt legitimately does not have it.
+    if (not drone_lookup_done)
+    {
+        drone_lookup_done = true;
+        drone_node = robot != nullptr ? robot->getFromDef(drone_def) : nullptr;
+        if (drone_node == nullptr)
+        {
+            // Not an error: only beta_drone.wbt carries a drone. Said once, so a mode toggle in a
+            // droneless world explains itself instead of silently doing nothing.
+            std::cout << "[ Drone ] no node with DEF " << drone_def
+                      << " in this world -- drone mode will have nothing to fly." << std::endl;
+            return;
+        }
+        drone_translation = drone_node->getField("translation");
+        drone_rotation    = drone_node->getField("rotation");
+        if (drone_translation == nullptr or drone_rotation == nullptr)
+        {
+            std::cout << "[ Drone ] DEF " << drone_def
+                      << " has no translation/rotation field -- it is not a Pose. Not flying it."
+                      << std::endl;
+            drone_node = nullptr;
+            return;
+        }
+        // Where the world author put it: the landing spot, and the origin the limits below are
+        // measured from. Read rather than assumed, so moving it in the .wbt moves its home too.
+        const double *t = drone_translation->getSFVec3f();
+        for (int i = 0; i < 3; ++i) drone_home[i] = drone_pos[i] = t[i];
+        const double *r = drone_rotation->getSFRotation();
+        // Only a yaw is ever written, so only a z-axis rotation can be carried over. Anything else
+        // is an author's tilt this has no way to represent, and starting from 0 is the honest thing to do.
+        drone_yaw = (std::fabs(r[0]) < 1e-6 and std::fabs(r[1]) < 1e-6 and r[2] > 0.0) ? r[3] : 0.0;
+        std::cout << "[ Drone ] " << drone_def << " resolved, landed at ["
+                  << drone_home[0] << ' ' << drone_home[1] << ' ' << drone_home[2]
+                  << "] in the robot frame." << std::endl;
+    }
+    if (drone_node == nullptr) return;
+
+    DroneCmd cmd;
+    bool flying = false;
+    {
+        const std::lock_guard<std::mutex> lock(drone_mutex);
+        flying = drone_mode;
+        cmd = drone_cmd;
+    }
+    if (not flying) return;
+
+    // dt from the SIMULATION clock, not the wall clock: the pose written below is a simulated
+    // displacement, so running the simulation at 0.5x must halve it, not merely make it look slow.
+    const double sim_ms = robot->getTime() * 1000.0;
+    const double dt = (drone_last_sim_ms >= 0.0 and sim_ms > drone_last_sim_ms)
+                          ? (sim_ms - drone_last_sim_ms) * 0.001 : 0.0;
+    drone_last_sim_ms = sim_ms;
+    if (dt <= 0.0 or dt > 1.0) return;   // first cycle after entry, or a reset sent the clock backwards
+
+    drone_yaw += cmd.yaw * drone_yaw_speed * dt;
+
+    // Body frame: forward is where the drone's own nose points, which is how a drone is flown and
+    // what makes the yaw stick worth having. With yaw at 0 this is exactly the robot frame.
+    const double c = std::cos(drone_yaw), s_ = std::sin(drone_yaw);
+    const double fwd = cmd.forward * drone_linear_speed * dt;
+    const double lat = cmd.lateral * drone_linear_speed * dt;
+    drone_pos[0] += lat * c - fwd * s_;    // robot +x is right ...
+    drone_pos[1] += lat * s_ + fwd * c;    // ... and robot +y is forward
+    drone_pos[2] += cmd.climb * drone_climb_speed * dt;
+
+    // Keep it in sight and out of the floor. Without this a stick left leaning walks it out of the
+    // world at 1 m/s and there is no way back except reloading -- it has no physics to stop it.
+    const double dx = drone_pos[0] - drone_home[0], dy = drone_pos[1] - drone_home[1];
+    if (const double r = std::hypot(dx, dy); r > drone_max_radius)
+    {
+        drone_pos[0] = drone_home[0] + dx * drone_max_radius / r;
+        drone_pos[1] = drone_home[1] + dy * drone_max_radius / r;
+    }
+    drone_pos[2] = std::clamp(drone_pos[2],
+                              drone_home[2] + drone_min_height,
+                              drone_home[2] + drone_max_height);
+
+    const double t[3] = {drone_pos[0], drone_pos[1], drone_pos[2]};
+    drone_translation->setSFVec3f(t);
+    const double r[4] = {0.0, 0.0, 1.0, drone_yaw};
+    drone_rotation->setSFRotation(r);
 }
 
 #pragma endregion JoystickAdapter
@@ -2357,7 +2516,7 @@ void SpecificWorker::parseHumanObjects() {
 // door, and only the caller knows which one it means. An unknown DEF, or a node with no `position`
 // field, is reported and ignored — a request to move a door that is not there must fail loudly and
 // change nothing, never silently move a different one.
-void SpecificWorker::setDoorAperture(const std::string &DEF, float _aperture) {
+void SpecificWorker::setDoorAperture(const std::string &DEF, float _aperture, int request_id) {
 
     if (DEF.empty()) {
         std::cerr << "[Error] setDoorAngle called with an empty DEF.\n";
@@ -2399,9 +2558,61 @@ void SpecificWorker::setDoorAperture(const std::string &DEF, float _aperture) {
         return;
     }
 
-    // Set the door position
-    positionField->setSFFloat(aperture);
-    std::cout << "[Info] Door '" << DEF << "' aperture set to " << aperture << " rad.\n";
+    // ★SET A TARGET, DO NOT TELEPORT. Writing the field here would move the door between two frames,
+    // which no hinge does and no camera could track — and the whole point of opening a door in this
+    // scene is to find out whether the robot notices. update_door_swing() walks it there.
+    auto &sw = doorSwings[DEF];
+    sw.current = positionField->getSFFloat();   // start from wherever it actually is, not from 0
+    sw.target  = aperture;
+    sw.active  = true;
+    sw.request_id = request_id;   // so arrival can settle the RequestStatus, not the mere command
+    std::cout << "[Info] Door '" << DEF << "' swinging " << sw.current << " -> " << aperture
+              << " rad at " << door_swing_rate << " rad/s.\n";
+}
+
+// Advance every active door one step toward its target. Supervisor thread, once per compute() cycle.
+//
+// ★The step is rate * the WORLD's own timestep, so the swing takes the same wall-clock time whatever
+// the simulation speed is set to — a door that opens in 1.3 s of sim time at 1x must not open in 0.1 s
+// when the world is run at 10x, or the perception experiment it exists for measures the wrong thing.
+void SpecificWorker::update_door_swing()
+{
+    if (doorSwings.empty())
+        return;
+    const double dt = robot->getBasicTimeStep() / 1000.0;
+    const float step = static_cast<float>(door_swing_rate * dt);
+    for (auto &[DEF, sw] : doorSwings)
+    {
+        if (not sw.active)
+            continue;
+        auto it = doorNodes.find(DEF);
+        if (it == doorNodes.end() or not it->second) { sw.active = false; continue; }
+        webots::Field *pf = it->second->getField("position");
+        if (not pf) { sw.active = false; continue; }
+
+        const float remaining = sw.target - sw.current;
+        if (std::abs(remaining) <= step)
+        {
+            // Land exactly on the target rather than oscillating around it by a fraction of a step.
+            sw.current = sw.target;
+            sw.active = false;
+            std::cout << "[Info] Door '" << DEF << "' reached " << sw.target << " rad.\n";
+            // ★DELIVERED MEANS THE LEAF ARRIVED — still not a claim that the door "is open", which
+            // stays the caller's perceptual question. It is a claim about what this provider did.
+            if (sw.request_id >= 0)
+            {
+                const std::lock_guard<std::mutex> lock(door_control_mutex);
+                if (auto rit = door_control_requests.find(sw.request_id);
+                    rit != door_control_requests.end()
+                    and rit->second.state != RoboCompDoorControl::RequestState::Aborted)
+                    rit->second.state = RoboCompDoorControl::RequestState::Delivered;
+                sw.request_id = -1;
+            }
+        }
+        else
+            sw.current += (remaining > 0.f ? step : -step);
+        pf->setSFFloat(sw.current);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -2527,11 +2738,13 @@ RoboCompDoorControl::RequestAck SpecificWorker::DoorControl_requestDoor(RoboComp
 
     post_webots_task([this, id, def, target]
     {
-        setDoorAperture(def, target);
+        setDoorAperture(def, target, id);
+        // InProgress: the leaf is MOVING. update_door_swing() flips it to Delivered on arrival.
+        // Reporting Delivered here was true of a teleport and is a lie about a swing.
         const std::lock_guard<std::mutex> lock(door_control_mutex);
         if (auto it = door_control_requests.find(id); it != door_control_requests.end()
             and it->second.state != RoboCompDoorControl::RequestState::Aborted)
-            it->second.state = RoboCompDoorControl::RequestState::Delivered;
+            it->second.state = RoboCompDoorControl::RequestState::InProgress;
     });
 
     ack.requestId = id;

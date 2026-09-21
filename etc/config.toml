@@ -278,3 +278,36 @@ Doors = ["DOOR_0", "DOOR_1"]
 # typicalLatencySec and nothing else), so the two numbers are duplicated by necessity — advertising it is
 # the real fix and wants an .idsl change on both sides.
 SwingRate = 0.5
+
+[DroneControl]
+# The kinematic drone that rides on Shadow's base, flown from the same joystick as the robot.
+# Press the pad's `drone_mode` button (etc/config_shadow, Button_3 = Xbox 'A') to swap which
+# vehicle the sticks address; press again to hand them back to the base.
+#   advance -> forward    side -> lateral    rotate -> yaw    altitude -> climb
+#
+# ★ONLY beta_drone.wbt HAS A DRONE. This section is harmless in every other world: the bridge looks
+#  the DEF up once, says so if it is not there, and drone mode then flies nothing. Nothing else in
+#  the bridge changes, and the base is untouched until the button is pressed.
+
+# DEF name of the drone's Pose node in the world file.
+Def = "DRONE"
+
+# Speeds at FULL stick. The drone has no physics, so these are exactly what it does -- there is no
+# thrust to build up and no drag to settle against, and the stick is the velocity.
+LinearSpeed = 1.0     # m/s, horizontal
+ClimbSpeed  = 0.7     # m/s, vertical
+YawSpeed    = 1.5     # rad/s
+
+# Flight envelope, measured from where the world file parks the drone (its landing spot on the
+# base), in the ROBOT's frame -- the node is a child of the robot, so it rides along with it.
+# ⚠Without a limit a stick left leaning walks the drone out of the world and there is no way back
+#  short of reloading: nothing stops it, because nothing is simulating it.
+MaxRadius = 6.0       # m, horizontally from the landing spot
+MinHeight = 0.0       # m above the landing spot; 0 keeps it from sinking into the base
+MaxHeight = 4.0       # m above the landing spot
+
+# ⚠MUST MATCH etc/config_shadow's Axis_0 max in python_xbox_controller. That axis is published in
+#  mm/s (+-750) while every other axis is already [-1, 1], and the drone wants a fraction of full
+#  stick. If the two drift apart the drone flies slower or faster than the stick suggests -- it is
+#  named here rather than hidden in the parsing so the coupling is visible from both ends.
+AdvanceAxisFullScale = 750.0

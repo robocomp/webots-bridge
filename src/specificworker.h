@@ -283,6 +283,23 @@ private:
 	// a caller means is now its argument, and getFromDef is walked once per DEF (a null is cached too —
 	// "no such node in this world" does not change while the world is loaded).
 	std::map<std::string, webots::Node*> doorNodes;
+
+    // ── Door SWING, not teleport ──────────────────────────────────────────────────────────────────
+    // setDoorAperture used to write the hinge `position` field once, so a door jumped from shut to 90
+    // degrees between two frames. Nothing in Webots is wrong with that — the supervisor may set any
+    // pose — but a robot watching the door sees a discontinuity no real hinge produces, and every
+    // perception channel downstream (silhouette, optical flow, the RGB contour check) is built on the
+    // assumption that things move continuously. A door that teleports is a door no camera could have
+    // tracked, which makes it useless for testing whether the robot NOTICES a door opening.
+    // So a request now sets a TARGET, and update_door_swing() walks the field toward it at a fixed
+    // angular rate, one step per Webots cycle.
+    // `request_id` ties the motion back to its DoorControl request, so getRequestStatus reports
+    // InProgress while the leaf is moving and Delivered only when it arrives. Reporting Delivered the
+    // moment the target was SET was true of a teleport and is a lie about a swing.
+    struct DoorSwing { float target = 0.f; float current = 0.f; bool active = false; int request_id = -1; };
+    std::map<std::string, DoorSwing> doorSwings;
+    float door_swing_rate = 1.2f;   // rad/s; ~1.3 s for a 90 degree swing. Config: DoorControl.SwingRate
+    void update_door_swing();       // supervisor thread, once per compute() cycle
     webots::Field* robotRotationField = nullptr;
     webots::Field* robotTranslationField = nullptr;
 
@@ -540,6 +557,55 @@ private:
     void post_webots_task(std::function<void()> task);
     void run_webots_tasks();
 
+    // --- Joystick-flown kinematic drone ------------------------------------------
+    // The same pad that drives the base also flies the drone that rides on it: one press of the
+    // `drone_mode` button swaps which vehicle the sticks address. One pad, two vehicles, rather than
+    // a second publisher -- the drone has no controller of its own and is not meant to get one.
+    //
+    // ★ IT IS KINEMATIC, AND THAT IS THE WHOLE DESIGN. The drone is a `Pose` in Shadow's
+    //   extensionSlot with no Physics node, so nothing simulates lift, drag or a rotor. Flying it
+    //   means the supervisor WRITING its translation and rotation each step. There is therefore no
+    //   attitude, no thrust and no way to crash it: the stick sets a VELOCITY and this integrates it.
+    //   Do not read the pose below as a state estimate -- it is the command, and the simulation
+    //   follows it exactly.
+    //
+    // ★ THE POSE IS ROBOT-RELATIVE, because the node is a child of the Shadow robot. Two
+    //   consequences worth stating rather than discovering: the drone RIDES WITH THE ROBOT for free
+    //   (which is what makes it look landed on the base), and if something else drives the base
+    //   while the drone is airborne, the drone is carried along with it. Entering drone mode stops
+    //   the base precisely so the pad cannot do that to itself.
+    struct DroneCmd { float forward = 0.f, lateral = 0.f, yaw = 0.f, climb = 0.f; };
+    std::mutex drone_mutex;                 // guards the three fields below (servant <-> Webots thread)
+    DroneCmd drone_cmd;                     // latest sticks, normalised to [-1, 1]
+    bool drone_mode = false;                // false: the sticks drive the base. true: they fly the drone
+    bool drone_mode_button_down = false;    // previous button state, for edge detection
+
+    // Webots-thread only, resolved once on the first cycle that needs them.
+    webots::Node  *drone_node = nullptr;
+    webots::Field *drone_translation = nullptr;
+    webots::Field *drone_rotation = nullptr;
+    bool drone_lookup_done = false;         // a null result is final too: the world has no such node
+    double drone_home[3] = {0, 0, 0};       // pose as authored: where it sits landed, and the limit origin
+    double drone_pos[3] = {0, 0, 0};        // integrated command, robot frame, metres
+    double drone_yaw = 0.0;                 // integrated command, rad about the robot's +z
+    double drone_last_sim_ms = -1.0;        // for dt; negative means "no previous step to measure from"
+
+    // Tuning. Config section [DroneControl]; the defaults fly it sensibly with no config at all.
+    std::string drone_def = "DRONE";        // DEF name in the world file
+    double drone_linear_speed = 1.0;        // m/s at full stick
+    double drone_climb_speed  = 0.7;        // m/s at full stick
+    double drone_yaw_speed    = 1.5;        // rad/s at full stick
+    double drone_max_radius   = 6.0;        // m from the landing spot, horizontally
+    double drone_min_height   = 0.0;        // m above the landing spot: 0 means it cannot sink into the base
+    double drone_max_height   = 4.0;        // m above the landing spot
+    // ★ The "advance" axis is published in mm/s (etc/config_shadow scales it to +-750) while every
+    //   other axis is already [-1, 1]. The drone wants a fraction of full stick, so this is the
+    //   divisor that turns one into the other. It MUST match that file's Axis_0 max; if the two
+    //   drift apart the drone simply flies slower or faster than the stick suggests, which is why
+    //   it is a named, configurable number instead of a 750 buried in the parsing.
+    double drone_advance_full_scale = 750.0;
+    void update_drone_control();            // supervisor thread, once per compute() cycle
+
     // --- IMU snapshot ------------------------------------------------------------
     std::mutex imu_mutex;
     RoboCompIMU::DataImu imu_data{};
@@ -678,7 +744,7 @@ private:
     Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
     std::tuple<float, float, float> rotationMatrixToEulerZYX(const double* R);
 
-	void setDoorAperture(const std::string &DEF, float _aperture);
+	void setDoorAperture(const std::string &DEF, float _aperture, int request_id = -1);
 
 signals:
         //void customSignal();
