@@ -627,7 +627,9 @@ private:
     double drone_yaw_accel     = 4.0;       // rad/s^2
     double drone_max_radius   = 6.0;        // m from the robot's vertical axis, horizontally
     double drone_min_z        = 0.7925;     // m, robot frame: the top of the base. Its landing height.
-    double drone_max_z        = 4.8;        // m, robot frame
+    double drone_max_z        = 2.2;        // m, robot frame: beta_drone.wbt's ceiling is at world z
+                                             //   2.38 m and the drone is kinematic, so a config
+                                             //   without this key must not fly it through the roof
     // ★ The "advance" axis is published in mm/s (etc/config_shadow scales it to +-750) while every
     //   other axis is already [-1, 1]. The drone wants a fraction of full stick, so this is the
     //   divisor that turns one into the other. It MUST match that file's Axis_0 max; if the two
