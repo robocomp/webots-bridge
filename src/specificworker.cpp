@@ -101,9 +101,12 @@ void SpecificWorker::initialize()
         try { drone_linear_speed = configLoader.get<double>("DroneControl.LinearSpeed"); } catch(...) {}
         try { drone_climb_speed  = configLoader.get<double>("DroneControl.ClimbSpeed"); } catch(...) {}
         try { drone_yaw_speed    = configLoader.get<double>("DroneControl.YawSpeed"); } catch(...) {}
+        try { drone_max_accel    = configLoader.get<double>("DroneControl.MaxAccel"); } catch(...) {}
+        try { drone_climb_accel  = configLoader.get<double>("DroneControl.ClimbAccel"); } catch(...) {}
+        try { drone_yaw_accel    = configLoader.get<double>("DroneControl.YawAccel"); } catch(...) {}
         try { drone_max_radius   = configLoader.get<double>("DroneControl.MaxRadius"); } catch(...) {}
-        try { drone_min_height   = configLoader.get<double>("DroneControl.MinHeight"); } catch(...) {}
-        try { drone_max_height   = configLoader.get<double>("DroneControl.MaxHeight"); } catch(...) {}
+        try { drone_min_z        = configLoader.get<double>("DroneControl.MinZ"); } catch(...) {}
+        try { drone_max_z        = configLoader.get<double>("DroneControl.MaxZ"); } catch(...) {}
         try { drone_advance_full_scale = configLoader.get<double>("DroneControl.AdvanceAxisFullScale"); } catch(...) {}
 
         try { door_control_defs = configLoader.get<std::vector<std::string>>("DoorControl.Doors"); }
@@ -244,6 +247,7 @@ void SpecificWorker::initialize()
         gyroscope = robot->getGyro("gyro");
         zedRangeFinder = robot->getRangeFinder("zed-ranger");
         zed = robot->getCamera("zed");
+        drone_camera = robot->getCamera("drone_dome");
 
         // Activa los componentes en la simulación si los detecta.
         // Heavy sensors run at sensor_period; the IMU and wheel encoders are cheap and
@@ -276,6 +280,20 @@ void SpecificWorker::initialize()
         if(gyroscope) gyroscope->enable(compute_period);
         if (zedRangeFinder) zedRangeFinder->enable(sensor_period);
         if (zed) zed->enable(sensor_period);
+        // ★ ENABLING IT IS WHAT MAKES IT EXIST. A Webots camera renders nothing, shows no overlay
+        //   and draws no frustum until a controller enables it -- so before this line the drone's
+        //   dome was in the world file and invisible in the simulator, which looks exactly like a
+        //   camera aimed the wrong way. Absent is normal (only beta_drone.wbt has a drone), so this
+        //   says which of the two it is rather than leaving a silent null.
+        if (drone_camera)
+        {
+            drone_camera->enable(sensor_period);
+            std::cout << "[ Drone ] dome camera enabled: " << drone_camera->getWidth() << 'x'
+                      << drone_camera->getHeight() << ", fov " << drone_camera->getFov()
+                      << " rad. Serve it as CameraRGBDSimple_getImage(\"drone_dome\")." << std::endl;
+        }
+        else
+            std::cout << "[ Drone ] no camera named 'drone_dome' in this world." << std::endl;
 
         // Wheel odometry needs every encoder. Fall back LOUDLY rather than silently, because a quiet
         // revert to the supervisor is indistinguishable from the wheel path not working.
@@ -345,6 +363,7 @@ void SpecificWorker::compute()
         //if(range_finder) receiving_depthImageData(range_finder, now);
         if(camera360_1 and camera360_2) receiving_camera360Data(camera360_1, camera360_2, now);
         if(zedRangeFinder && zed) receiving_cameraRGBD(zed, zedRangeFinder, zedImage, now);
+        if(drone_camera) receiving_droneCamera(drone_camera, now);
     }
 
     // Refresh the snapshots served by the RPC servants, then drain any work they
@@ -491,6 +510,48 @@ void SpecificWorker::receiving_cameraRGBD(webots::Camera* _camera,
             }
     }
     double_buffer_zed.put(std::move(new_zed_image));
+}
+
+
+// The drone's downward dome. RGB only: the drone carries a Camera and no RangeFinder, so there is
+// no depth to report and none is invented.
+void SpecificWorker::receiving_droneCamera(webots::Camera* _camera, long timestamp)
+{
+    const unsigned char *raw = _camera->getImage();
+    if (raw == nullptr) return;              // no sample yet: enabled, but not stepped through once
+
+    RoboCompCameraRGBDSimple::TImage img;
+    const int width = _camera->getWidth(), height = _camera->getHeight();
+
+    // Acquisition instant, not loop time -- same reasoning as the ZED path above: the frame was
+    // rendered at the last multiple of the camera's sampling period and can be a full period old.
+    const double sim_now_ms = robot != nullptr ? robot->getTime() * 1000.0 : 0.0;
+    img.alivetime = acquisition_wall_ms(timestamp, sim_now_ms, sensor_period);
+    img.period = static_cast<float>(sensor_period);
+    img.width = width;
+    img.height = height;
+    img.depth = 3;
+    img.compressed = false;
+
+    // ★ focalx/focaly ARE ZERO, AND THAT IS DELIBERATE. The dome is `projection "spherical"` with a
+    //   180 degree field, and a spherical projection HAS no pinhole focal length -- the pinhole
+    //   formula the ZED path uses, w / (2 tan(fov/2)), evaluates to about 0.25 px here, which is not
+    //   a focal length but is close enough to one to be computed with. Zero is visibly wrong;
+    //   0.25 is invisibly wrong, and a consumer that back-projects with it gets plausible garbage.
+    //   A caller that needs geometry from this image needs the equidistant model, not an intrinsic
+    //   matrix, and must read the projection from the world file.
+    img.focalx = 0;
+    img.focaly = 0;
+
+    // BGRA, not RGBA: Webots hands back BGRA and calling it RGB is the bug that put the 360
+    // panorama through this pipeline with its red and blue swapped (78c5595).
+    const cv::Mat bgra(height, width, CV_8UC4, const_cast<unsigned char*>(raw));
+    cv::Mat rgb;
+    cv::cvtColor(bgra, rgb, cv::COLOR_BGRA2RGB);
+
+    img.image.resize(rgb.total() * rgb.channels());
+    std::memcpy(img.image.data(), rgb.data, img.image.size());
+    double_buffer_drone.put(std::move(img));
 }
 
 
@@ -1443,9 +1504,30 @@ RoboCompCamera360RGB::TImage SpecificWorker::Camera360RGB_getROI(int cx, int cy,
 
 #pragma region CameraRGBDSimple
 
+// ★ THE `camera` ARGUMENT USED TO BE IGNORED. All four getters returned the ZED whatever name was
+//   passed, so the interface's one parameter was decoration and there was no way to ask this bridge
+//   for a second camera. Now that the drone carries one, the name has to mean something.
+//
+//   Compatibility is by construction rather than by luck: "" and "zed" both mean the ZED, and so
+//   does ANY UNRECOGNISED NAME -- which is what every existing caller passes (zed_component sends
+//   "", yolov8_py sends whatever its config holds). An unknown name therefore behaves exactly as it
+//   did before this change, and says so once per second instead of silently pretending.
+static bool names_the_drone(const std::string &camera)
+{
+    return camera == "drone_dome" or camera == "drone";
+}
+
 RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
+    if (names_the_drone(camera))
+    {
+        // image only. The drone has no RangeFinder, so depth and points stay empty rather than
+        // being filled with zeros a caller would read as "everything is at range 0".
+        RoboCompCameraRGBDSimple::TRGBD rgbd;
+        rgbd.image = take_next_or_empty(double_buffer_drone);
+        return rgbd;
+    }
     return take_next_or_empty(double_buffer_zed);
 }
 
@@ -1454,18 +1536,24 @@ RoboCompCameraRGBDSimple::TRGBD SpecificWorker::CameraRGBDSimple_getAll(std::str
 RoboCompCameraRGBDSimple::TDepth SpecificWorker::CameraRGBDSimple_getDepth(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
+    if (names_the_drone(camera))
+        return {};   // no RangeFinder on the drone: there is no depth, and an empty one says so
     return take_next_or_empty_with(double_buffer_zed, [](const auto &rgbd) { return rgbd.depth; });
 }
 
 RoboCompCameraRGBDSimple::TImage SpecificWorker::CameraRGBDSimple_getImage(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
+    if (names_the_drone(camera))
+        return take_next_or_empty(double_buffer_drone);
     return take_next_or_empty_with(double_buffer_zed, [](const auto &rgbd) { return rgbd.image; });
 }
 
 RoboCompCameraRGBDSimple::TPoints SpecificWorker::CameraRGBDSimple_getPoints(std::string camera)
 {
     last_read.store(std::chrono::high_resolution_clock::now());
+    if (names_the_drone(camera))
+        return {};   // no depth, so no cloud to derive one from
     return take_next_or_empty_with(double_buffer_zed, [](const auto &rgbd) { return rgbd.points; });
 }
 
@@ -2265,17 +2353,20 @@ void SpecificWorker::update_drone_control()
             drone_node = nullptr;
             return;
         }
-        // Where the world author put it: the landing spot, and the origin the limits below are
-        // measured from. Read rather than assumed, so moving it in the .wbt moves its home too.
+        // Seed the integrator from wherever the drone actually is, so the first stick input does not
+        // teleport it. This is the ONLY thing the live pose is used for -- the flight envelope is
+        // absolute (see drone_min_z), precisely so that starting the bridge with the drone airborne
+        // does not carry its floor up with it and leave it unable to land.
         const double *t = drone_translation->getSFVec3f();
-        for (int i = 0; i < 3; ++i) drone_home[i] = drone_pos[i] = t[i];
+        for (int i = 0; i < 3; ++i) drone_pos[i] = t[i];
         const double *r = drone_rotation->getSFRotation();
         // Only a yaw is ever written, so only a z-axis rotation can be carried over. Anything else
         // is an author's tilt this has no way to represent, and starting from 0 is the honest thing to do.
         drone_yaw = (std::fabs(r[0]) < 1e-6 and std::fabs(r[1]) < 1e-6 and r[2] > 0.0) ? r[3] : 0.0;
-        std::cout << "[ Drone ] " << drone_def << " resolved, landed at ["
-                  << drone_home[0] << ' ' << drone_home[1] << ' ' << drone_home[2]
-                  << "] in the robot frame." << std::endl;
+        std::cout << "[ Drone ] " << drone_def << " resolved at ["
+                  << drone_pos[0] << ' ' << drone_pos[1] << ' ' << drone_pos[2]
+                  << "] in the robot frame; envelope z " << drone_min_z << ".." << drone_max_z
+                  << " m, radius " << drone_max_radius << " m." << std::endl;
     }
     if (drone_node == nullptr) return;
 
@@ -2296,28 +2387,54 @@ void SpecificWorker::update_drone_control()
     drone_last_sim_ms = sim_ms;
     if (dt <= 0.0 or dt > 1.0) return;   // first cycle after entry, or a reset sent the clock backwards
 
-    drone_yaw += cmd.yaw * drone_yaw_speed * dt;
+    // Rate-limit each axis toward what the stick is asking for. This is the whole of the "mass":
+    // a kinematic node has no inertia, so the acceleration limit has to be imposed on the command.
+    const auto approach = [dt](double current, double target, double rate)
+    {
+        const double step = rate * dt;
+        return std::clamp(target, current - step, current + step);
+    };
+    drone_vel[0] = approach(drone_vel[0], cmd.forward * drone_linear_speed, drone_max_accel);
+    drone_vel[1] = approach(drone_vel[1], cmd.lateral * drone_linear_speed, drone_max_accel);
+    drone_vel[2] = approach(drone_vel[2], cmd.climb   * drone_climb_speed,  drone_climb_accel);
+    drone_yaw_vel = approach(drone_yaw_vel, cmd.yaw   * drone_yaw_speed,    drone_yaw_accel);
+
+    drone_yaw += drone_yaw_vel * dt;
 
     // Body frame: forward is where the drone's own nose points, which is how a drone is flown and
-    // what makes the yaw stick worth having. With yaw at 0 this is exactly the robot frame.
+    // what makes the yaw stick worth having.
+    //
+    // ★ THE DRONE'S NOSE IS THE ROBOT'S +x, WHICH IS THE ROBOT'S RIGHT. The Mavic mesh is mounted
+    //   unrotated, and its own forward is +x (its rotors sit at x in [-0.177, +0.055] with the
+    //   short pair forward, and its gimbal hangs off the +x end) -- while Shadow's forward is +y,
+    //   the axis the ZED and the front 360 lens face. So the drone is DRAWN facing the robot's
+    //   right, and flying it along the robot's forward made the stick feel rotated 90 degrees: the
+    //   thing moved sideways relative to the way it visibly pointed. The fix belongs here and not
+    //   in the stick mapping -- the axes are not swapped, the drone's body frame is simply turned
+    //   90 degrees from the robot's, and writing that down is what keeps the yaw consistent too.
+    //   (Rotating the mesh in the .wbt instead would work and would change how the drone LOOKS
+    //   parked on the base, which is a scene decision, not a control one.)
     const double c = std::cos(drone_yaw), s_ = std::sin(drone_yaw);
-    const double fwd = cmd.forward * drone_linear_speed * dt;
-    const double lat = cmd.lateral * drone_linear_speed * dt;
-    drone_pos[0] += lat * c - fwd * s_;    // robot +x is right ...
-    drone_pos[1] += lat * s_ + fwd * c;    // ... and robot +y is forward
-    drone_pos[2] += cmd.climb * drone_climb_speed * dt;
+    const double fwd = drone_vel[0] * dt;
+    const double lat = drone_vel[1] * dt;
+    drone_pos[0] += fwd * c + lat * s_;    // nose at yaw 0 is robot +x ...
+    drone_pos[1] += fwd * s_ - lat * c;    // ... so its right is robot -y
+    drone_pos[2] += drone_vel[2] * dt;
 
     // Keep it in sight and out of the floor. Without this a stick left leaning walks it out of the
     // world at 1 m/s and there is no way back except reloading -- it has no physics to stop it.
-    const double dx = drone_pos[0] - drone_home[0], dy = drone_pos[1] - drone_home[1];
-    if (const double r = std::hypot(dx, dy); r > drone_max_radius)
+    // Measured from the ROBOT, not from the drone's own start: see drone_min_z in the header.
+    if (const double r = std::hypot(drone_pos[0], drone_pos[1]); r > drone_max_radius)
     {
-        drone_pos[0] = drone_home[0] + dx * drone_max_radius / r;
-        drone_pos[1] = drone_home[1] + dy * drone_max_radius / r;
+        drone_pos[0] *= drone_max_radius / r;
+        drone_pos[1] *= drone_max_radius / r;
+        drone_vel[0] = drone_vel[1] = 0.0;   // same reason as the z limit below: do not push a wall
     }
-    drone_pos[2] = std::clamp(drone_pos[2],
-                              drone_home[2] + drone_min_height,
-                              drone_home[2] + drone_max_height);
+    const double z_before = drone_pos[2];
+    drone_pos[2] = std::clamp(drone_pos[2], drone_min_z, drone_max_z);
+    // Killed on contact with a limit rather than left running: a velocity that cannot move the
+    // drone is not a velocity, and keeping it would make the drone leap the moment it is free.
+    if (drone_pos[2] != z_before) drone_vel[2] = 0.0;
 
     const double t[3] = {drone_pos[0], drone_pos[1], drone_pos[2]};
     drone_translation->setSFVec3f(t);

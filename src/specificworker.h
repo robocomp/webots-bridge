@@ -278,6 +278,10 @@ private:
     webots::Accelerometer* accelerometer;
     webots::Gyro* gyroscope;
 	webots::Camera* zed;
+    // The downward dome on the drone that rides on Shadow's base. Null in every world except
+    // beta_drone.wbt, and that is not an error -- it is a device of the Shadow robot only because
+    // the drone hangs off the robot's extensionSlot, so worlds without a drone simply do not have it.
+    webots::Camera* drone_camera = nullptr;
 	webots::RangeFinder* zedRangeFinder;
 	// DEF -> node cache for setDoorAngle. Replaces the single hard-wired CONTROLLABLE_DOOR: which door
 	// a caller means is now its argument, and getFromDef is walked once per DEF (a null is cached too —
@@ -585,9 +589,15 @@ private:
     webots::Field *drone_translation = nullptr;
     webots::Field *drone_rotation = nullptr;
     bool drone_lookup_done = false;         // a null result is final too: the world has no such node
-    double drone_home[3] = {0, 0, 0};       // pose as authored: where it sits landed, and the limit origin
     double drone_pos[3] = {0, 0, 0};        // integrated command, robot frame, metres
-    double drone_yaw = 0.0;                 // integrated command, rad about the robot's +z
+    double drone_yaw = 0.0;                 // integrated command, rad from the mesh's nose, about +z
+    // ★ THE STICK SETS A TARGET VELOCITY, NOT THE VELOCITY. Without this the drone reaches full
+    //   speed in one frame and stops dead on release, because nothing simulates its mass -- it
+    //   reads as a cursor being dragged, not as something flying. These carry the velocity actually
+    //   in effect, and each step moves it toward the stick by at most (accel limit x dt). Holding a
+    //   stick therefore ramps up, and releasing one coasts to a stop.
+    double drone_vel[3] = {0, 0, 0};        // m/s, BODY frame for xy (forward, right), robot z for climb
+    double drone_yaw_vel = 0.0;             // rad/s
     double drone_last_sim_ms = -1.0;        // for dt; negative means "no previous step to measure from"
 
     // Tuning. Config section [DroneControl]; the defaults fly it sensibly with no config at all.
@@ -595,9 +605,16 @@ private:
     double drone_linear_speed = 1.0;        // m/s at full stick
     double drone_climb_speed  = 0.7;        // m/s at full stick
     double drone_yaw_speed    = 1.5;        // rad/s at full stick
-    double drone_max_radius   = 6.0;        // m from the landing spot, horizontally
-    double drone_min_height   = 0.0;        // m above the landing spot: 0 means it cannot sink into the base
-    double drone_max_height   = 4.0;        // m above the landing spot
+    // ★ ABSOLUTE IN THE ROBOT FRAME, not relative to wherever the drone happened to be. They were
+    //   measured from the pose captured at startup, which is a bug you only hit once: restart the
+    //   bridge while the drone is AIRBORNE and its floor moves up with it, so it can never be
+    //   landed again. A fixed envelope does not care when the bridge started.
+    double drone_max_accel     = 2.0;       // m/s^2; ~0.5 s from rest to LinearSpeed
+    double drone_climb_accel   = 1.5;       // m/s^2
+    double drone_yaw_accel     = 4.0;       // rad/s^2
+    double drone_max_radius   = 6.0;        // m from the robot's vertical axis, horizontally
+    double drone_min_z        = 0.7925;     // m, robot frame: the top of the base. Its landing height.
+    double drone_max_z        = 4.8;        // m, robot frame
     // ★ The "advance" axis is published in mm/s (etc/config_shadow scales it to +-750) while every
     //   other axis is already [-1, 1]. The drone wants a fraction of full stick, so this is the
     //   divisor that turns one into the other. It MUST match that file's Axis_0 max; if the two
@@ -658,6 +675,7 @@ private:
     void receiving_camera360Data(webots::Camera* _camera1, webots::Camera* _camera2, long timestamp);
     void receiving_robotSpeed(webots::Supervisor* _robot, long timestamp);
 	void receiving_cameraRGBD(webots::Camera* _camera, webots::RangeFinder* _rangeFinder, RoboCompCameraRGBDSimple::TRGBD& _image, long timestamp);
+    void receiving_droneCamera(webots::Camera* _camera, long timestamp);
     double generate_noise(double stddev);
 
     // Laser
@@ -740,6 +758,10 @@ private:
 	// zed
 	RoboCompCameraRGBDSimple::TRGBD zedImage;
 	DoubleBuffer<RoboCompCameraRGBDSimple::TRGBD, RoboCompCameraRGBDSimple::TRGBD> double_buffer_zed;
+    // RGB only, deliberately: the drone carries a Camera and no RangeFinder, so there is no depth
+    // to buffer. TImage rather than TRGBD makes that a fact of the type rather than two empty
+    // members a caller has to discover are always empty.
+    DoubleBuffer<RoboCompCameraRGBDSimple::TImage, RoboCompCameraRGBDSimple::TImage> double_buffer_drone;
 
     Matrix4d create_affine_matrix(double a, double b, double c, Vector3d trans);
     std::tuple<float, float, float> rotationMatrixToEulerZYX(const double* R);

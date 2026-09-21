@@ -285,6 +285,10 @@ SwingRate = 0.5
 # vehicle the sticks address; press again to hand them back to the base.
 #   advance -> forward    side -> lateral    rotate -> yaw    altitude -> climb
 #
+# "Forward" is the drone's OWN nose, which the Mavic mesh points along the robot's +x -- i.e. the
+# robot's RIGHT, since Shadow faces +y. That is a property of the mesh, not of the mapping, and the
+# bridge accounts for it so the stick moves the drone the way it visibly points.
+#
 # ★ONLY beta_drone.wbt HAS A DRONE. This section is harmless in every other world: the bridge looks
 #  the DEF up once, says so if it is not there, and drone mode then flies nothing. Nothing else in
 #  the bridge changes, and the base is untouched until the button is pressed.
@@ -298,13 +302,27 @@ LinearSpeed = 1.0     # m/s, horizontal
 ClimbSpeed  = 0.7     # m/s, vertical
 YawSpeed    = 1.5     # rad/s
 
-# Flight envelope, measured from where the world file parks the drone (its landing spot on the
-# base), in the ROBOT's frame -- the node is a child of the robot, so it rides along with it.
+# Acceleration limits -- this is the drone's entire "mass". It is a kinematic node, so nothing
+# simulates inertia: without these the stick IS the velocity, the drone reaches full speed in one
+# frame and stops dead on release, and it reads as a cursor being dragged rather than as something
+# flying. The stick sets a TARGET velocity and the bridge walks the real one toward it at these
+# rates, so holding a stick ramps up and releasing one coasts to a stop.
+# Lower them for a heavier, more sluggish drone; raise them toward instantaneous for the old feel.
+MaxAccel    = 2.0     # m/s^2, horizontal: ~0.5 s from rest to LinearSpeed
+ClimbAccel  = 1.5     # m/s^2, vertical
+YawAccel    = 4.0     # rad/s^2
+
+# Flight envelope, ABSOLUTE in the ROBOT's frame -- the node is a child of the robot, so it rides
+# along with it and these limits ride along too.
 # ⚠Without a limit a stick left leaning walks the drone out of the world and there is no way back
 #  short of reloading: nothing stops it, because nothing is simulating it.
-MaxRadius = 6.0       # m, horizontally from the landing spot
-MinHeight = 0.0       # m above the landing spot; 0 keeps it from sinking into the base
-MaxHeight = 4.0       # m above the landing spot
+# ★ABSOLUTE, NOT RELATIVE TO WHERE THE DRONE STARTED. They used to be measured from the pose read at
+#  bridge startup, which is a bug you hit exactly once: restart the bridge while the drone is
+#  AIRBORNE and its floor rises with it, so it can never be landed again. MinZ is the height of the
+#  base's top surface -- the drone's landing height -- so it always reaches the pad.
+MaxRadius = 6.0       # m, horizontally from the robot's vertical axis
+MinZ = 0.7925         # m, robot frame: the top of the base, where beta_drone.wbt parks the drone
+MaxZ = 4.8            # m, robot frame
 
 # ⚠MUST MATCH etc/config_shadow's Axis_0 max in python_xbox_controller. That axis is published in
 #  mm/s (+-750) while every other axis is already [-1, 1], and the drone wants a fraction of full
