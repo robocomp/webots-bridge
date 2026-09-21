@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(webots_bridge_tests CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+find_package(GTest REQUIRED)
+add_executable(test_drone_command test_drone_command.cpp)
+target_include_directories(test_drone_command PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+target_link_libraries(test_drone_command GTest::gtest GTest::gtest_main)
