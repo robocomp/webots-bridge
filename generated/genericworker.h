@@ -36,6 +36,7 @@
 #include <Camera360RGB.h>
 #include <CameraRGBDSimple.h>
 #include <DoorControl.h>
+#include <DroneControl.h>
 #include <FullPoseEstimation.h>
 #include <FullPoseEstimationPub.h>
 #include <GenericBase.h>
@@ -84,6 +85,10 @@ public:
 	virtual RoboCompDoorControl::Capabilities DoorControl_getCapabilities() = 0;
 	virtual RoboCompDoorControl::RequestStatus DoorControl_getRequestStatus(int requestId) = 0;
 	virtual RoboCompDoorControl::RequestAck DoorControl_requestDoor(RoboCompDoorControl::DoorRequest req) = 0;
+
+	virtual RoboCompDroneControl::TPose DroneControl_getPose() = 0;
+	virtual void DroneControl_setVelocity(float forward, float lateral, float climb, float yaw) = 0;
+	virtual void DroneControl_stop() = 0;
 
 	virtual RoboCompIMU::Acceleration IMU_getAcceleration() = 0;
 	virtual RoboCompIMU::Gyroscope IMU_getAngularVel() = 0;

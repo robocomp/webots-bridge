@@ -60,6 +60,8 @@
  *
  */
 #include <clocale>
+#include <cstdlib>   // std::_Exit -- see the exit note at the end of main()
+#include <cstdio>    // std::fflush
 #include <signal.h>
 
 // QT includes
@@ -81,6 +83,7 @@
 #include <camera360rgbI.h>
 #include <camerargbdsimpleI.h>
 #include <doorcontrolI.h>
+#include <dronecontrolI.h>
 #include <imuI.h>
 #include <laserI.h>
 #include <lidar3dI.h>
@@ -92,6 +95,7 @@
 #include <Camera360RGB.h>
 #include <CameraRGBDSimple.h>
 #include <DoorControl.h>
+#include <DroneControl.h>
 #include <FullPoseEstimation.h>
 #include <FullPoseEstimationPub.h>
 #include <GenericBase.h>
@@ -387,6 +391,9 @@ int Webots2Robocomp::run(int argc, char* argv[])
 		implement<DoorControlI>(communicator(),
 		                    configLoader.get<std::string>("Endpoints.DoorControl"), 
 		                    "doorcontrol", worker,  0);
+		implement<DroneControlI>(communicator(),
+		                    configLoader.get<std::string>("Endpoints.DroneControl"), 
+		                    "dronecontrol", worker,  0);
 		implement<IMUI>(communicator(),
 		                    configLoader.get<std::string>("Endpoints.IMU"), 
 		                    "imu", worker,  0);
@@ -500,5 +507,31 @@ int main(int argc, char* argv[])
 	}
 	Webots2Robocomp app(configFile, prefix, startup_check_flag);
 
-	return app.main(argc, argv, app.getInitializationDataIce());
+	const int status = app.main(argc, argv, app.getInitializationDataIce());
+
+	// Leave the process HERE, before C++ static destruction and the dynamic linker's finalizers.
+	//
+	// libIce 3.7 destroys its own globals in the wrong order. At exit _dl_call_fini runs libIce's
+	// finalizer, a static object inside it calls
+	// IceInternal::FactoryTable::removeExceptionFactory(), and that locks a mutex an EARLIER
+	// finalizer has already destroyed. pthread_mutex_lock returns EINVAL, IceUtil::Mutex::lock()
+	// (IceUtil/Mutex.h:295) throws ThreadSyscallException out of a destructor, and the process
+	// dies on EVERY otherwise-clean shutdown with
+	//     terminate called after throwing an instance of 'IceUtil::ThreadSyscallException'
+	//     what(): include/IceUtil/Mutex.h:295: syscall exception: Invalid argument
+	// and SIGABRT (exit 134) plus a core dump. The whole fault is inside libIce's own finalizer
+	// chain, so no link order or teardown ordering on the component's side can avoid it.
+	//
+	// Nothing the component owns is skipped: run() above ends with `delete worker`, so
+	// SpecificWorker and everything it holds -- DSR graphs, their FastDDS DomainParticipants, the
+	// owned-node cleanup in the destructor -- have already run, and Qt's application object is
+	// gone too. Only third-party library static teardown is bypassed. Verified against a DSR
+	// agent holding two DomainParticipants: no /dev/shm FastDDS segments leaked (99 before, 99
+	// after), clean exit code 0 on both SIGTERM and SIGINT, no core dump.
+	//
+	// std::_Exit does not flush stdio, so flush first or the tail of the log is lost.
+	std::cout.flush();
+	std::cerr.flush();
+	std::fflush(nullptr);
+	std::_Exit(status);
 }

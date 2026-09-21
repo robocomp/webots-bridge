@@ -108,6 +108,7 @@ void SpecificWorker::initialize()
         try { drone_min_z        = configLoader.get<double>("DroneControl.MinZ"); } catch(...) {}
         try { drone_max_z        = configLoader.get<double>("DroneControl.MaxZ"); } catch(...) {}
         try { drone_advance_full_scale = configLoader.get<double>("DroneControl.AdvanceAxisFullScale"); } catch(...) {}
+        try { drone_watchdog_s   = configLoader.get<double>("DroneControl.WatchdogSec"); } catch(...) {}
 
         try { door_control_defs = configLoader.get<std::vector<std::string>>("DoorControl.Doors"); }
         catch(...) {}
@@ -371,7 +372,7 @@ void SpecificWorker::compute()
     update_object_poses();
     update_door_control();
     update_door_swing();   // walk any in-flight door toward its target (no teleport)
-    update_drone_control();// fly the drone, when the joystick has been switched to it
+    update_drone_control(now);// fly the drone: gamepad in drone mode, or DroneControl
     run_webots_tasks();
 
     // Push any speed command received over RPC since the last step.
@@ -2316,9 +2317,24 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
         // negative, and negative about the robot's +z is clockwise -- stick-right yaws right.
         drone_cmd.yaw     = unit(rot);
         drone_cmd.climb   = unit(climb);
+        drone_cmd_time = std::chrono::steady_clock::now();
         return;
     }
     OmniRobot_setSpeedBase(side, adv, rot);
+}
+
+// Live node -> drone_pos / drone_yaw. Used to seed the integrator, and every cycle while nobody is
+// flying it, so a drag in the Webots GUI or a Webots2Robocomp.setObjectPose is picked up instead of
+// being undone by the next write.
+void SpecificWorker::read_drone_pose()
+{
+    const double *t = drone_translation->getSFVec3f();
+    for (int i = 0; i < 3; ++i) drone_pos[i] = t[i];
+    const double *r = drone_rotation->getSFRotation();
+    // Only a yaw is ever written, so only a z-axis rotation can be carried over. Anything else
+    // is an author's tilt this has no way to represent, and starting from 0 is the honest thing to do.
+    // Webots may express a negative yaw as a -z axis, so the axis sign is folded into the angle.
+    drone_yaw = (std::fabs(r[0]) < 1e-6 and std::fabs(r[1]) < 1e-6) ? std::copysign(r[3], r[2]) : 0.0;
 }
 
 // Fly the drone one step. Supervisor thread, once per compute() cycle.
@@ -2327,7 +2343,7 @@ void SpecificWorker::JoystickAdapter_sendData(RoboCompJoystickAdapter::TData dat
 // there is nothing else that could move it. The pose is in the robot's frame, since the node lives
 // in Shadow's extensionSlot -- forward is the robot's +y (the direction the ZED and the front
 // 360 lens face), right is +x, up is +z.
-void SpecificWorker::update_drone_control()
+void SpecificWorker::update_drone_control(long now_wall_ms)
 {
     // Resolve once. A null is cached too: whether this world contains the drone does not change
     // while it is loaded, and beta_empty.wbt legitimately does not have it.
@@ -2357,12 +2373,7 @@ void SpecificWorker::update_drone_control()
         // teleport it. This is the ONLY thing the live pose is used for -- the flight envelope is
         // absolute (see drone_min_z), precisely so that starting the bridge with the drone airborne
         // does not carry its floor up with it and leave it unable to land.
-        const double *t = drone_translation->getSFVec3f();
-        for (int i = 0; i < 3; ++i) drone_pos[i] = t[i];
-        const double *r = drone_rotation->getSFRotation();
-        // Only a yaw is ever written, so only a z-axis rotation can be carried over. Anything else
-        // is an author's tilt this has no way to represent, and starting from 0 is the honest thing to do.
-        drone_yaw = (std::fabs(r[0]) < 1e-6 and std::fabs(r[1]) < 1e-6 and r[2] > 0.0) ? r[3] : 0.0;
+        read_drone_pose();
         std::cout << "[ Drone ] " << drone_def << " resolved at ["
                   << drone_pos[0] << ' ' << drone_pos[1] << ' ' << drone_pos[2]
                   << "] in the robot frame; envelope z " << drone_min_z << ".." << drone_max_z
@@ -2370,14 +2381,24 @@ void SpecificWorker::update_drone_control()
     }
     if (drone_node == nullptr) return;
 
-    DroneCmd cmd;
-    bool flying = false;
+    // Who is flying it this cycle. See drone_command.h for the rules and why they are these.
+    drone::Selection sel;
     {
         const std::lock_guard<std::mutex> lock(drone_mutex);
-        flying = drone_mode;
-        cmd = drone_cmd;
+        const auto now = std::chrono::steady_clock::now();
+        const auto age_s = [now](auto t) { return std::chrono::duration<double>(now - t).count(); };
+        const drone::Velocity stick{drone_cmd.forward, drone_cmd.lateral, drone_cmd.climb, drone_cmd.yaw};
+        sel = drone::select_target(drone_mode, stick, age_s(drone_cmd_time),
+                                   drone_api_cmd, age_s(drone_api_time),
+                                   {drone_linear_speed, drone_climb_speed, drone_yaw_speed},
+                                   drone_watchdog_s);
     }
-    if (not flying) return;
+    if (sel.source != drone_source)
+    {
+        std::cout << "[ Drone ] pilot: " << drone::to_string(drone_source) << " -> "
+                  << drone::to_string(sel.source) << std::endl;
+        drone_source = sel.source;
+    }
 
     // dt from the SIMULATION clock, not the wall clock: the pose written below is a simulated
     // displacement, so running the simulation at 0.5x must halve it, not merely make it look slow.
@@ -2385,19 +2406,34 @@ void SpecificWorker::update_drone_control()
     const double dt = (drone_last_sim_ms >= 0.0 and sim_ms > drone_last_sim_ms)
                           ? (sim_ms - drone_last_sim_ms) * 0.001 : 0.0;
     drone_last_sim_ms = sim_ms;
+
+    // ★ NOBODY FLYING AND IT HAS STOPPED: DO NOT WRITE THE POSE. This used to return whenever the
+    //   pad was not in drone mode; now a program can fly it without drone mode, so the integrator
+    //   runs every cycle -- and writing an unchanged pose every cycle would silently undo any drag
+    //   in the Webots GUI or any setObjectPose. Read it instead, so flight resumes from wherever it is.
+    const bool at_rest = drone_vel[0] == 0.0 and drone_vel[1] == 0.0 and drone_vel[2] == 0.0
+                         and drone_yaw_vel == 0.0;
+    if (sel.source == drone::Source::Hover and at_rest)
+    {
+        read_drone_pose();
+        const std::lock_guard<std::mutex> lock(drone_mutex);
+        drone_pose_snapshot = {static_cast<float>(drone_pos[0]), static_cast<float>(drone_pos[1]),
+                               static_cast<float>(drone_pos[2]), static_cast<float>(drone_yaw), now_wall_ms};
+        return;
+    }
     if (dt <= 0.0 or dt > 1.0) return;   // first cycle after entry, or a reset sent the clock backwards
 
-    // Rate-limit each axis toward what the stick is asking for. This is the whole of the "mass":
+    // Rate-limit each axis toward the selected target. This is the whole of the "mass":
     // a kinematic node has no inertia, so the acceleration limit has to be imposed on the command.
     const auto approach = [dt](double current, double target, double rate)
     {
         const double step = rate * dt;
         return std::clamp(target, current - step, current + step);
     };
-    drone_vel[0] = approach(drone_vel[0], cmd.forward * drone_linear_speed, drone_max_accel);
-    drone_vel[1] = approach(drone_vel[1], cmd.lateral * drone_linear_speed, drone_max_accel);
-    drone_vel[2] = approach(drone_vel[2], cmd.climb   * drone_climb_speed,  drone_climb_accel);
-    drone_yaw_vel = approach(drone_yaw_vel, cmd.yaw   * drone_yaw_speed,    drone_yaw_accel);
+    drone_vel[0] = approach(drone_vel[0], sel.target.forward, drone_max_accel);
+    drone_vel[1] = approach(drone_vel[1], sel.target.lateral, drone_max_accel);
+    drone_vel[2] = approach(drone_vel[2], sel.target.climb,   drone_climb_accel);
+    drone_yaw_vel = approach(drone_yaw_vel, sel.target.yaw,   drone_yaw_accel);
 
     drone_yaw += drone_yaw_vel * dt;
 
@@ -2440,9 +2476,41 @@ void SpecificWorker::update_drone_control()
     drone_translation->setSFVec3f(t);
     const double r[4] = {0.0, 0.0, 1.0, drone_yaw};
     drone_rotation->setSFRotation(r);
+
+    {
+        const std::lock_guard<std::mutex> lock(drone_mutex);
+        drone_pose_snapshot = {static_cast<float>(drone_pos[0]), static_cast<float>(drone_pos[1]),
+                               static_cast<float>(drone_pos[2]), static_cast<float>(drone_yaw), now_wall_ms};
+    }
 }
 
 #pragma endregion JoystickAdapter
+
+#pragma region DroneControl
+
+// Stored, not applied: everything that touches Webots runs on the thread that calls robot->step(),
+// and update_drone_control() picks this up there -- the same hand-off the pad uses.
+void SpecificWorker::DroneControl_setVelocity(float forward, float lateral, float climb, float yaw)
+{
+    const std::lock_guard<std::mutex> lock(drone_mutex);
+    drone_api_cmd = {forward, lateral, climb, yaw};
+    drone_api_time = std::chrono::steady_clock::now();
+}
+
+// A zero command rather than a flag: it expires like any other, and "brake to a hover" is exactly
+// what a zero target does under the acceleration limits.
+void SpecificWorker::DroneControl_stop()
+{
+    DroneControl_setVelocity(0.f, 0.f, 0.f, 0.f);
+}
+
+RoboCompDroneControl::TPose SpecificWorker::DroneControl_getPose()
+{
+    const std::lock_guard<std::mutex> lock(drone_mutex);
+    return drone_pose_snapshot;
+}
+
+#pragma endregion DroneControl
 
 #pragma region IMU
 

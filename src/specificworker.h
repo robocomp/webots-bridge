@@ -48,6 +48,7 @@
 #include <doublebuffer/DoubleBuffer.h>
 #include <fps/fps.h>
 #include "fixedsizedeque.h"
+#include "drone_command.h"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -226,6 +227,11 @@ public:
 	RoboCompDoorControl::RequestAck DoorControl_requestDoor(RoboCompDoorControl::DoorRequest req);
 	RoboCompDoorControl::RequestStatus DoorControl_getRequestStatus(int requestId);
 	void DoorControl_cancelRequest(int requestId);
+
+	// DroneControl
+	void DroneControl_setVelocity(float forward, float lateral, float climb, float yaw);
+	void DroneControl_stop();
+	RoboCompDroneControl::TPose DroneControl_getPose();
 
 public slots:
 
@@ -579,10 +585,14 @@ private:
     //   while the drone is airborne, the drone is carried along with it. Entering drone mode stops
     //   the base precisely so the pad cannot do that to itself.
     struct DroneCmd { float forward = 0.f, lateral = 0.f, yaw = 0.f, climb = 0.f; };
-    std::mutex drone_mutex;                 // guards the three fields below (servant <-> Webots thread)
+    std::mutex drone_mutex;                 // guards the seven fields below (servant <-> Webots thread)
     DroneCmd drone_cmd;                     // latest sticks, normalised to [-1, 1]
     bool drone_mode = false;                // false: the sticks drive the base. true: they fly the drone
     bool drone_mode_button_down = false;    // previous button state, for edge detection
+    std::chrono::steady_clock::time_point drone_cmd_time{};   // last pad frame that reached drone_cmd
+    drone::Velocity drone_api_cmd;                            // last DroneControl.setVelocity, SI units
+    std::chrono::steady_clock::time_point drone_api_time{};   // ... and when it arrived
+    RoboCompDroneControl::TPose drone_pose_snapshot{};        // what getPose() serves
 
     // Webots-thread only, resolved once on the first cycle that needs them.
     webots::Node  *drone_node = nullptr;
@@ -599,6 +609,9 @@ private:
     double drone_vel[3] = {0, 0, 0};        // m/s, BODY frame for xy (forward, right), robot z for climb
     double drone_yaw_vel = 0.0;             // rad/s
     double drone_last_sim_ms = -1.0;        // for dt; negative means "no previous step to measure from"
+    drone::Source drone_source = drone::Source::Hover;   // Webots thread only: to log pilot changes
+    double drone_watchdog_s = 0.5;                      // [DroneControl] WatchdogSec
+    void read_drone_pose();                             // live node -> drone_pos / drone_yaw
 
     // Tuning. Config section [DroneControl]; the defaults fly it sensibly with no config at all.
     std::string drone_def = "DRONE";        // DEF name in the world file
@@ -621,7 +634,7 @@ private:
     //   drift apart the drone simply flies slower or faster than the stick suggests, which is why
     //   it is a named, configurable number instead of a 750 buried in the parsing.
     double drone_advance_full_scale = 750.0;
-    void update_drone_control();            // supervisor thread, once per compute() cycle
+    void update_drone_control(long now_wall_ms);   // supervisor thread, once per compute() cycle
 
     // --- IMU snapshot ------------------------------------------------------------
     std::mutex imu_mutex;

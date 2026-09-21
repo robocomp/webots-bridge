@@ -35,6 +35,7 @@ OmniRobot = "tcp -p 10004"
 VisualElements = "tcp -p 10005"
 Webots2Robocomp = "tcp -p 10006"
 DoorControl = "tcp -p 10017"
+DroneControl = "tcp -p 10019"
 # Endpoints for subscriptions interfaces
 JoystickAdapterTopic = "tcp -p 11025"
 JoystickAdapterPrefix = ""
@@ -311,6 +312,12 @@ YawSpeed    = 1.5     # rad/s
 MaxAccel    = 2.0     # m/s^2, horizontal: ~0.5 s from rest to LinearSpeed
 ClimbAccel  = 1.5     # m/s^2, vertical
 YawAccel    = 4.0     # rad/s^2
+
+# DroneControl.setVelocity commands, and gamepad frames, EXPIRE after this long. A program that
+# stops calling (crashed, hung) or a pad that stops publishing with a stick leaning must not
+# leave the drone cruising into the geofence: after WatchdogSec without news it brakes to a
+# hover. Callers are expected to resend every cycle, so keep this a few cycles long.
+WatchdogSec = 0.5
 
 # Flight envelope, ABSOLUTE in the ROBOT's frame -- the node is a child of the robot, so it rides
 # along with it and these limits ride along too.
