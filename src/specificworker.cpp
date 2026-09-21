@@ -2477,10 +2477,19 @@ void SpecificWorker::update_drone_control(long now_wall_ms)
     const double r[4] = {0.0, 0.0, 1.0, drone_yaw};
     drone_rotation->setSFRotation(r);
 
+    // ★ STAMPED ONE STEP AHEAD OF now_wall_ms, UNLIKE THE AT-REST SNAPSHOT ABOVE. The pose just
+    //   written here only takes effect once THIS cycle's robot->step() runs (right after
+    //   update_drone_control() returns, see the caller), so the first frame that can show it is not
+    //   stamped now_wall_ms (now_k) but the wall time at which that step completes -- the same
+    //   sim->wall mapping acquisition_wall_ms() uses, inverted to project forward by one Compute
+    //   period instead of back by a sample's age. The at-rest path above reads the live (already
+    //   rendered) node, so now_wall_ms is correct there and must NOT get this offset.
+    const long flying_wall_ms = now_wall_ms +
+        std::lround(getPeriod("Compute") / (sim_wall_rate_ > 0.05 ? sim_wall_rate_ : 1.0));
     {
         const std::lock_guard<std::mutex> lock(drone_mutex);
         drone_pose_snapshot = {static_cast<float>(drone_pos[0]), static_cast<float>(drone_pos[1]),
-                               static_cast<float>(drone_pos[2]), static_cast<float>(drone_yaw), now_wall_ms};
+                               static_cast<float>(drone_pos[2]), static_cast<float>(drone_yaw), flying_wall_ms};
     }
 }
 
