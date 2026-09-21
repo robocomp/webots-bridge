@@ -317,6 +317,9 @@ YawAccel    = 4.0     # rad/s^2
 # stops calling (crashed, hung) or a pad that stops publishing with a stick leaning must not
 # leave the drone cruising into the geofence: after WatchdogSec without news it brakes to a
 # hover. Callers are expected to resend every cycle, so keep this a few cycles long.
+# This assumes the pad publisher keeps publishing while a stick is held, not only on change:
+# python_xbox_controller does, every ~16 ms. An event-only publisher would see a held-still
+# stick time out after WatchdogSec and brake even though nothing changed.
 WatchdogSec = 0.5
 
 # Flight envelope, ABSOLUTE in the ROBOT's frame -- the node is a child of the robot, so it rides
@@ -329,7 +332,9 @@ WatchdogSec = 0.5
 #  base's top surface -- the drone's landing height -- so it always reaches the pad.
 MaxRadius = 6.0       # m, horizontally from the robot's vertical axis
 MinZ = 0.7925         # m, robot frame: the top of the base, where beta_drone.wbt parks the drone
-MaxZ = 4.8            # m, robot frame
+MaxZ = 2.2            # m, robot frame: beta_drone.wbt's ceiling is at world z 2.38 m and the drone is
+                       #  kinematic, so it would pass straight through with no other guard. Raise this
+                       #  for a world with a higher ceiling.
 
 # ⚠MUST MATCH etc/config_shadow's Axis_0 max in python_xbox_controller. That axis is published in
 #  mm/s (+-750) while every other axis is already [-1, 1], and the drone wants a fraction of full
