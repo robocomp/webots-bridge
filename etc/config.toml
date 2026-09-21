@@ -3,12 +3,19 @@
 # comments carried across. Two deliberate differences, both stated rather than silent:
 #   * `Base.Kinematics` is DROPPED. This bridge drives the differential Shadow only, so the
 #     key is obsolete; the code warns if an old config still sets it to anything else.
-#   * `[DoorControl] Doors` exists in the OLD config.toml but not in etc/config, so it is
-#     carried below as a COMMENT: enabling it changes behaviour (getCapabilities() starts
-#     reporting canActuate=true), and a derived file must not do that on its own.
+#   * `[DoorControl] Doors` was carried below as a COMMENT when this file was derived, because
+#     enabling it changes behaviour (getCapabilities() starts reporting canActuate=true) and a
+#     derived file must not do that on its own. ★IT HAS SINCE BEEN ENABLED, deliberately and with
+#     the world checked — see the [DoorControl] section at the bottom. The note above is kept only
+#     to record why it was ever off.
 # ⚠ Values that DISAGREED between etc/config and the old etc/config.toml are taken from
-#   etc/config, which is the file actually being run: Endpoints.DoorControl 10017 (toml said
-#   10008), FullPose.PublishPeriod 100 (20), Period.Compute 8 (10).
+#   etc/config: Endpoints.DoorControl 10017 (toml said 10008), FullPose.PublishPeriod 100 (20),
+#   Period.Compute 8 (10).
+# ★★★AND `etc/config` IS NOT THE FILE BEING RUN — THIS ONE IS. That claim stood in this header for
+#   weeks and was simply wrong: verified 2026-09-12 off the live process, `bin/Webots2Robocomp
+#   etc/config.toml`. It matters because the two files DISAGREE about DoorControl.Doors (only this
+#   one sets it), so anybody reading the old wording concluded the bridge could not actuate a door
+#   while the running bridge could. A header that names the wrong live file is worse than no header.
 
 
 [Proxies]
@@ -242,9 +249,11 @@ ElevMaxDeg = 15.0
 [DoorControl]
 # Which doors this provider advertises over DoorControl: the hinge DEFs of the loaded world.
 # Absent => it advertises none and getCapabilities() reports canActuate=false, which is the
-# honest answer for a world whose doors are scenery. etc/config does NOT set this, so neither
-# does this file; the old config.toml did. Uncomment only if the loaded world really has
-# actuable hinges by these DEF names.
+# honest answer for a world whose doors are scenery. Set it only if the loaded world really has
+# actuable hinges by these DEF names — the bridge resolves each DEF against the world and
+# advertises only the ones that resolve, so a wrong name drops out rather than lying.
+# ★ENABLED AND LIVE. This file is the one the bridge is run with (see the header), so canActuate
+#  is TRUE today. The line below is not a suggestion.
 # ENABLED 2026-09-09 after checking the loaded world rather than trusting the names: piso.wbt has
 # `DEF DOOR_0 Door` and `DEF DOOR_1 Door` (lines 833/848), and the Door PROTO exposes the `position`
 # field setDoorAperture() writes — so getFromDef() resolves and the aperture actually moves. Both are
@@ -258,4 +267,14 @@ Doors = ["DOOR_0", "DOOR_1"]
 # it — and the reason to open a door in this scene is to find out whether the robot NOTICES. 1.2 rad/s
 # is ~1.3 s for a 90 degree swing. The step is rate x the world's own timestep, so the swing takes the
 # same wall-clock time whatever speed the simulation is run at.
-SwingRate = 1.2
+# SLOWED 2026-09-13 from 1.2 to 0.5 rad/s: 90 degrees now takes ~3.1 s instead of ~1.3 s.
+# ★NOT COSMETIC. The reason to open a door in this scene is to find out whether the robot NOTICES, and a
+# faster swing gives the perception less to work with: the leaf spends longer at intermediate angles where
+# the contour check can actually track it, and the agent's commanded-swing anticipation has more frames to
+# be confirmed or refuted by the image rather than running to completion unchallenged.
+# ⚠MUST STAY IN STEP WITH door_concept's [DoorAffordance] ActuationSwingRate. That agent predicts the leaf
+# angle from (rate x elapsed) while a swing is in flight, so if this is slower than what it assumes, it
+# believes the door open before it is. The interface does not advertise the rate (DoorControl.idsl carries
+# typicalLatencySec and nothing else), so the two numbers are duplicated by necessity — advertising it is
+# the real fix and wants an .idsl change on both sides.
+SwingRate = 0.5
