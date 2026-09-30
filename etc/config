@@ -122,11 +122,11 @@ SensorNoise.Enabled     = true
 #   parked (the zero-command residual) before trusting them; they are a starting point, not a
 #   result. The same caution applies to reading WheelSigmaV/W as slip rather than as the flat
 #   density they used to be.
-SensorNoise.WheelSigmaVFloor = 0.0005   # m/sqrt(s)   — sub-count residual at standstill
-SensorNoise.WheelSigmaWFloor = 0.0010   # rad/sqrt(s) — same, yaw
-SensorNoise.WheelSigmaV = 0.006   # m/sqrt(s)   encoder velocity noise: ~19 mm/s of jitter at 10 Hz
-SensorNoise.WheelSigmaW = 0.010   # rad/sqrt(s) wheel-derived yaw-rate noise
-SensorNoise.WheelScaleV = 0.0     # no odometer scale error assumed; raise if the real base shows one
+SensorNoise.WheelSigmaVFloor = 0.0   # ARM 2: zeroed; was 0.0005
+SensorNoise.WheelSigmaWFloor = 0.0   # ARM 2: zeroed; was 0.0010
+SensorNoise.WheelSigmaV = 0.0   # ARM 2: zeroed. Noise only widens the posterior; was 0.006
+SensorNoise.WheelSigmaW = 0.0   # ARM 2: zeroed; was 0.010
+SensorNoise.WheelScaleV = 0.03   # ARM 2 injection: reported velocity = true x 1.03, so true k_v = 1/1.03. Baseline value 0.0 saved in etc/config.pre-arm2
 # ★ ZEROED 2026-08-17 after a CLOSURE TEST, and the reason is the opposite of what it first looked
 # like. A 4-turn pivot (4.0479 turns by the posterior, net travel 0.040 m, closing to within 17 deg
 # on 1440 -- the test resolves to ~1.2%) integrated as:
@@ -148,7 +148,7 @@ SensorNoise.WheelScaleV = 0.0     # no odometer scale error assumed; raise if th
 # would then be modelling something absent rather than doubling something present -- so check the
 # wheel/gyro ratio on a pivot before re-introducing it.
 SensorNoise.WheelScaleW = 0.0
-SensorNoise.GyroSigma   = 0.002   # rad/sqrt(s) — 3x quieter than the wheels, and with NO scale
+SensorNoise.GyroSigma   = 0.0   # ARM 2: zeroed; was 0.002
 SensorNoise.GyroBias    = 0.0     # a real gyro drifts; left at 0 until there is a figure to use
 
 IMU.NominalGyroVar     = 1e-5
